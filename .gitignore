@@ -1,0 +1,85 @@
+# ==========================================
+# Dependencies
+# ==========================================
+node_modules/
+*/node_modules/
+*/*/node_modules/
+.pnp
+.pnp.js
+
+# ==========================================
+# Production & Generated Software Releases (.exe, dist, builds)
+# ==========================================
+dist/
+**/dist/
+release/
+**/release/
+web-build/
+**/web-build/
+build/
+**/build/
+*.exe
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+*.zip
+*.7z
+*.tar.gz
+builder-debug.yml
+**/builder-debug.yml
+win-unpacked/
+**/win-unpacked/
+
+# ==========================================
+# Expo & Native Build Artifacts
+# ==========================================
+.expo/
+**/.expo/
+expo-env.d.ts
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+.metro-health-check*
+/ios
+/android
+
+# ==========================================
+# User Data & Private Backups (Strict Zero-Knowledge Protection)
+# ==========================================
+*.sav
+*.bak
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
+# ==========================================
+# Environment & Secrets
+# ==========================================
+.env
+.env*.local
+*.pem
+
+# ==========================================
+# Logs & Debugging
+# ==========================================
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.log
+
+# ==========================================
+# OS & IDE Files
+# ==========================================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.tsbuildinfo

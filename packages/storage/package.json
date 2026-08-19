@@ -1,0 +1,12 @@
+{
+  "main": "src/index.ts",
+  "version": "1.0.0",
+  "name": "@sa/storage",
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@sa/core": "workspace:*"
+  }
+}

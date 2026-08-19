@@ -1,0 +1,24 @@
+{
+  "name": "secure-authenticator",
+  "version": "1.0.0",
+  "description": "Secure, local-first, cross-platform 2FA Authenticator",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*", "platforms/*"],
+  "scripts": {
+    "dev:expo": "bun --cwd apps/expo start",
+    "android": "bun --cwd apps/expo android",
+    "ios": "bun --cwd apps/expo ios",
+    "web": "bun --cwd apps/expo web",
+    "desktop": "bun --cwd apps/desktop start",
+    "build:web": "bun --cwd apps/expo expo export --platform web",
+    "build:exe": "bun --cwd apps/expo expo export --platform web && bun --cwd apps/desktop electron-builder --win portable",
+    "test": "bun test",
+    "lint": "biome check .",
+    "format": "biome format --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.8.3",
+    "@types/node": "^26.2.0",
+    "typescript": "^5.5.3"
+  }
+}

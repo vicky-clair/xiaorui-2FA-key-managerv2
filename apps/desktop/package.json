@@ -1,0 +1,47 @@
+{
+  "name": "@sa/desktop",
+  "version": "1.0.0",
+  "description": "Secure Authenticator 2FA Desktop App",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "prebuild": "bun --cwd ../expo run expo export --platform web",
+    "build": "electron-builder build --win --dir",
+    "build:exe": "electron-builder build --win nsis portable"
+  },
+  "build": {
+    "appId": "com.xiaorui.secureauthenticator",
+    "productName": "Secure Authenticator",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "package.json",
+      "../expo/dist/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "../expo/dist",
+        "to": "dist"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Secure Authenticator"
+    }
+  },
+  "devDependencies": {
+    "electron": "^32.0.0",
+    "electron-builder": "^25.0.0"
+  }
+}
