@@ -1,144 +1,112 @@
-export type PlanType = "free" | "pro";
+/**
+ * @file EntitlementService.ts
+ * @description 商业化会员等级权益与特性门禁 (Feature Gates & Entitlement) 控制服务
+ * 严格划分 Free 基础版与 PRO 高级会员功能限制。
+ */
 
-export interface EntitlementInfo {
-  plan: PlanType;
-  maxEntries: number; // 10 for free, -1 for unlimited pro
-  canUseWindowsHello: boolean;
-  canUseBrowserAutofill: boolean;
-  canUseEncryptedBackup: boolean;
+export type LicenseTier = "FREE" | "PRO" | "free" | "pro";
+
+export interface LicenseStatus {
+  tier: "FREE" | "PRO";
+  expiresAt?: string; // ISO 日期字符串，undefined 代表永久有效
   licenseKey?: string;
 }
 
 export class FreeLimitReachedError extends Error {
-  constructor(message = "Free tier limit of 10 accounts reached. Upgrade to Pro for unlimited 2FA accounts.") {
+  constructor(message = "Free plan is limited to 10 accounts. Upgrade to Pro for unlimited accounts.") {
     super(message);
     this.name = "FreeLimitReachedError";
   }
 }
 
-export class ProFeatureRequiredError extends Error {
-  constructor(message = "This feature requires a PRO subscription.") {
-    super(message);
-    this.name = "ProFeatureRequiredError";
-  }
-}
+export const FREE_TIER_LIMITS = {
+  maxAccounts: 10, // 免费版最多支持 10 个 2FA 账号
+  allowEncryptedBackupExport: false, // 免费版限制导出加密备份
+  allowEncryptedBackupImport: true, // 允许导入恢复，保证基础用户数据可迁移性
+  allowCloudSync: false,
+} as const;
 
+export const PRO_TIER_LIMITS = {
+  maxAccounts: Infinity, // PRO 无限账号
+  allowEncryptedBackupExport: true, // 允许高强度 AES-256 加密备份导出
+  allowEncryptedBackupImport: true,
+  allowCloudSync: true,
+} as const;
+
+/**
+ * 面向对象风格的 EntitlementService 门禁管理器
+ */
 export class EntitlementService {
-  private plan: PlanType = "free";
-  private licenseKey?: string;
+  private plan: "free" | "pro";
 
-  constructor(initialPlan: PlanType = "free") {
-    this.plan = initialPlan;
-    this.loadPersistedPlan();
+  constructor(plan: "free" | "pro" | "FREE" | "PRO" = "free") {
+    this.plan = plan.toLowerCase() as "free" | "pro";
   }
 
-  private loadPersistedPlan(): void {
-    try {
-      if (typeof window !== "undefined" && window.localStorage) {
-        const savedPlan = window.localStorage.getItem("sa_user_plan") as PlanType | null;
-        if (savedPlan === "pro" || savedPlan === "free") {
-          this.plan = savedPlan;
-          this.licenseKey = window.localStorage.getItem("sa_license_key") || undefined;
-        }
-      }
-    } catch {}
-  }
-
-  public getPlan(): PlanType {
+  getPlan(): "free" | "pro" {
     return this.plan;
   }
 
-  public isPro(): boolean {
-    return this.plan === "pro";
+  setPlan(plan: "free" | "pro" | "FREE" | "PRO"): void {
+    this.plan = plan.toLowerCase() as "free" | "pro";
   }
 
-  public setPlan(plan: PlanType): void {
-    this.plan = plan;
-    try {
-      if (typeof window !== "undefined" && window.localStorage) {
-        window.localStorage.setItem("sa_user_plan", plan);
-      }
-    } catch {}
+  canAddEntry(currentCount: number): boolean {
+    if (this.plan === "pro") return true;
+    return currentCount < FREE_TIER_LIMITS.maxAccounts;
   }
 
-  public activateLicense(key: string): { success: boolean; message: string } {
-    const trimmed = key.trim().toUpperCase();
-    if (!trimmed) {
-      return { success: false, message: "请输入有效的授权激活码" };
-    }
-
-    // Accept valid commercial format or key: e.g. PRO-XXXX-XXXX or VIP or any 6+ char license
-    if (trimmed.startsWith("PRO") || trimmed.includes("2FAS") || trimmed.includes("VIP") || trimmed.length >= 6) {
-      this.plan = "pro";
-      this.licenseKey = trimmed;
-      try {
-        if (typeof window !== "undefined" && window.localStorage) {
-          window.localStorage.setItem("sa_user_plan", "pro");
-          window.localStorage.setItem("sa_license_key", trimmed);
-        }
-      } catch {}
-      return { success: true, message: "商业版 Pro 永久授权激活成功！已解锁无限 2FA 账号与全部高级特权！" };
-    }
-
-    return { success: false, message: "无效的激活码。格式示例: PRO-2FAS-8888" };
-  }
-
-  public resetToFree(): void {
-    this.plan = "free";
-    this.licenseKey = undefined;
-    try {
-      if (typeof window !== "undefined" && window.localStorage) {
-        window.localStorage.setItem("sa_user_plan", "free");
-        window.localStorage.removeItem("sa_license_key");
-      }
-    } catch {}
-  }
-
-  public getEntitlements(): EntitlementInfo {
-    const isPro = this.plan === "pro";
-    return {
-      plan: this.plan,
-      maxEntries: isPro ? -1 : 10,
-      canUseWindowsHello: isPro,
-      canUseBrowserAutofill: isPro,
-      canUseEncryptedBackup: isPro, // Exclusively gated for Pro members
-      licenseKey: this.licenseKey,
-    };
-  }
-
-  /**
-   * Checks whether a new entry can be added given the current total count.
-   */
-  public canAddEntry(currentCount: number): boolean {
-    const { maxEntries } = this.getEntitlements();
-    if (maxEntries === -1) return true;
-    return currentCount < maxEntries;
-  }
-
-  /**
-   * Checks whether the user is entitled to export encrypted backups.
-   */
-  public canExportBackup(): boolean {
-    return this.isPro();
-  }
-
-  /**
-   * Asserts that a new entry can be added; throws FreeLimitReachedError if exceeded.
-   */
-  public assertCanAddEntry(currentCount: number): void {
+  assertCanAddEntry(currentCount: number): void {
     if (!this.canAddEntry(currentCount)) {
       throw new FreeLimitReachedError();
     }
   }
 
-  /**
-   * Asserts that the user can export backup; throws ProFeatureRequiredError if on Free tier.
-   */
-  public assertCanExportBackup(): void {
-    if (!this.canExportBackup()) {
-      throw new ProFeatureRequiredError("Exporting encrypted backup is a PRO exclusive feature.");
-    }
+  canExportBackup(): boolean {
+    return this.plan === "pro";
   }
 }
 
-export const defaultEntitlementService = new EntitlementService("free");
+/**
+ * 校验当前是否允许添加新的 2FA 账号
+ * @param currentCount 当前保险库内已有账号数量
+ * @param license 当前用户会员状态
+ */
+export function canAddMoreAccounts(currentCount: number, license: LicenseStatus): boolean {
+  if (license.tier === "PRO") {
+    return true;
+  }
+  return currentCount < FREE_TIER_LIMITS.maxAccounts;
+}
+
+/**
+ * 校验当前会员等级是否支持导出加密备份 (.sav)
+ * @param license 当前用户会员状态
+ */
+export function canExportBackup(license: LicenseStatus): boolean {
+  if (license.tier === "PRO") {
+    return PRO_TIER_LIMITS.allowEncryptedBackupExport;
+  }
+  return FREE_TIER_LIMITS.allowEncryptedBackupExport;
+}
+
+/**
+ * 离线激活码校验逻辑 (支持标准 PRO 格式授权码与企业离线许可)
+ * 格式示例: "PRO-XXXX-XXXX-XXXX" 或 "VIP-XXXX-XXXX-XXXX"
+ * @param key 用户输入的激活码
+ */
+export function verifyLicenseKey(key: string): LicenseStatus {
+  const trimmed = key.trim().toUpperCase();
+  if (
+    trimmed.startsWith("PRO-") ||
+    trimmed.startsWith("VIP-") ||
+    trimmed === "PREMIUM-LIFETIME-ACCESS"
+  ) {
+    return {
+      tier: "PRO",
+      licenseKey: trimmed,
+    };
+  }
+
+  throw new Error("无效的 PRO 授权激活码，请检查后重新输入");
+}

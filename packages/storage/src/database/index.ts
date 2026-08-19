@@ -1,8 +1,17 @@
+/**
+ * @file database/index.ts
+ * @description SQLite 本地持久化数据库引擎与自动化表结构迁移管理
+ * 基于 expo-sqlite + Kysely 查询构建器，提供端到端类型安全、自适应索引与动态热升级支持。
+ */
+
 import type { AuthenticatorEntry, VaultMetadata } from "@sa/core";
 import * as SQLite from "expo-sqlite";
 import { Kysely } from "kysely";
 import { ExpoDialect } from "kysely-expo";
 
+/**
+ * Kysely 强类型数据库模式定义
+ */
 export interface Database {
   authenticator_entries: AuthenticatorEntry;
   vault_metadata: VaultMetadata;
@@ -11,6 +20,10 @@ export interface Database {
 let dbInstance: Kysely<Database> | null = null;
 let schemaInitDone = false;
 
+/**
+ * 单例模式获取或创建 Kysely 数据库连接实例
+ * @param dbName 数据库文件名，默认为 2fas.db
+ */
 export async function createDatabase(dbName = "2fas.db"): Promise<Kysely<Database>> {
   if (!dbInstance) {
     const expoDb = await SQLite.openDatabaseAsync(dbName);
@@ -24,14 +37,15 @@ export async function createDatabase(dbName = "2fas.db"): Promise<Kysely<Databas
 }
 
 /**
- * Initializes and auto-migrates the SQLite database schema directly using SQLite DDL.
+ * 数据库初始化与安全热迁移 (Auto-Migration)
+ * 启动时自动检查表结构与缺失字段，防止旧版本升级后因列不存在引发 SQL 错误
  */
 export async function initializeSchema(db?: Kysely<Database>): Promise<void> {
   if (schemaInitDone) return;
 
   const expoDb = await SQLite.openDatabaseAsync("2fas.db");
 
-  // 1. Ensure vault_metadata table exists
+  // 1. 确保主保险库元数据表存在 (包含 Argon2 盐值与信封加密后的主密钥)
   await expoDb.execAsync(`
     CREATE TABLE IF NOT EXISTS vault_metadata (
       id TEXT PRIMARY KEY NOT NULL,
@@ -48,7 +62,7 @@ export async function initializeSchema(db?: Kysely<Database>): Promise<void> {
     );
   `);
 
-  // 2. Ensure authenticator_entries table exists
+  // 2. 确保 2FA 动态口令密文条目表存在 (零明文设计，严密索引)
   await expoDb.execAsync(`
     CREATE TABLE IF NOT EXISTS authenticator_entries (
       id TEXT PRIMARY KEY NOT NULL,
@@ -65,7 +79,7 @@ export async function initializeSchema(db?: Kysely<Database>): Promise<void> {
     CREATE INDEX IF NOT EXISTS authenticator_entries_vault_id_idx ON authenticator_entries (vaultId);
   `);
 
-  // 3. Auto-migration check: verify all columns exist in authenticator_entries
+  // 3. 动态热迁移检查：利用 PRAGMA table_info 自动为老数据库补充缺失字段
   try {
     const tableInfo = await expoDb.getAllAsync<{ name: string }>("PRAGMA table_info(authenticator_entries);");
     const columnNames = new Set(tableInfo.map((col) => col.name));
@@ -89,7 +103,7 @@ export async function initializeSchema(db?: Kysely<Database>): Promise<void> {
       await expoDb.execAsync("ALTER TABLE authenticator_entries ADD COLUMN authTag TEXT;");
     }
   } catch (migErr) {
-    console.warn("Table column migration check warning:", migErr);
+    console.warn("数据库列迁移检查提示:", migErr);
   }
 
   schemaInitDone = true;

@@ -1,43 +1,13 @@
 /**
- * RFC 4648 Base32 decoder and encoder.
+ * @file base32.ts
+ * @description RFC 4648 标准 Base32 编码与解码工具
+ * 广泛用于 2FA 密钥解析（如 Google Authenticator、GitHub、Binance 等）。
  */
+
 const RFC4648_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
 /**
- * Decodes a Base32 string (case-insensitive, ignores spaces and hyphens) to a Uint8Array.
- */
-export function base32ToUint8Array(base32: string): Uint8Array {
-  // Normalize string: uppercase, remove spaces, hyphens, and padding '='
-  const clean = base32.toUpperCase().replace(/[\s\-=]/g, "");
-  if (clean.length === 0) {
-    return new Uint8Array(0);
-  }
-
-  let bits = 0;
-  let value = 0;
-  const output: number[] = [];
-
-  for (let i = 0; i < clean.length; i++) {
-    const char = clean.charAt(i);
-    const index = RFC4648_ALPHABET.indexOf(char);
-    if (index === -1) {
-      throw new Error(`Invalid Base32 character: "${char}"`);
-    }
-
-    value = (value << 5) | index;
-    bits += 5;
-
-    if (bits >= 8) {
-      output.push((value >>> (bits - 8)) & 255);
-      bits -= 8;
-    }
-  }
-
-  return new Uint8Array(output);
-}
-
-/**
- * Encodes a Uint8Array to a Base32 string without padding.
+ * 将二进制字节数组编码为标准 Base32 字符串
  */
 export function uint8ArrayToBase32(bytes: Uint8Array): string {
   let bits = 0;
@@ -59,4 +29,38 @@ export function uint8ArrayToBase32(bytes: Uint8Array): string {
   }
 
   return output;
+}
+
+/**
+ * 将 Base32 字符串安全解码为二进制字节数组 (Uint8Array)
+ * 自动忽略空格、连字符并容错转换大小写
+ */
+export function base32ToUint8Array(input: string): Uint8Array {
+  // 过滤用户粘贴时常见的空格和破折号
+  const sanitized = input.toUpperCase().replace(/[\s\-=]/g, "");
+  if (!sanitized) {
+    return new Uint8Array(0);
+  }
+
+  let bits = 0;
+  let value = 0;
+  const result: number[] = [];
+
+  for (let i = 0; i < sanitized.length; i++) {
+    const char = sanitized[i];
+    const index = RFC4648_ALPHABET.indexOf(char);
+    if (index === -1) {
+      throw new Error(`Base32 格式无效：包含非法字符 '${char}'`);
+    }
+
+    value = (value << 5) | index;
+    bits += 5;
+
+    if (bits >= 8) {
+      result.push((value >>> (bits - 8)) & 255);
+      bits -= 8;
+    }
+  }
+
+  return new Uint8Array(result);
 }

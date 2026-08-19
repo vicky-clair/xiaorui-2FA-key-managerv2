@@ -1,206 +1,191 @@
-import { base32ToUint8Array } from "./base32";
-import type { EntryPayload, OTPAlgorithm } from "../types/domain";
-
-const ALLOWED_ALGORITHMS: OTPAlgorithm[] = ["SHA1", "SHA256", "SHA512"];
-
 /**
- * Maps OTPAlgorithm to WebCrypto hash name.
+ * @file totp.ts
+ * @description RFC 6238 (TOTP) 与 RFC 4226 (HOTP) 标准动态口令生成与 URI 解析模块
+ * 支持 SHA1 / SHA256 / SHA512 散列算法，自适应处理 6 位/8 位数字验证码及多种时间步长。
  */
-function getHashName(algorithm: OTPAlgorithm = "SHA1"): string {
-  const norm = algorithm.toUpperCase();
-  if (norm === "SHA256") return "SHA-256";
-  if (norm === "SHA512") return "SHA-512";
-  return "SHA-1";
+
+import { base32ToUint8Array } from "./base32";
+
+export type OTPAlgorithm = "SHA1" | "SHA256" | "SHA512";
+
+export interface ParsedOtpAuthUri {
+  type: "totp" | "hotp";
+  issuer: string;
+  account: string;
+  secret: string; // Base32 编码的原始密钥
+  algorithm: OTPAlgorithm;
+  digits: number;
+  period: number;
+  counter?: number;
 }
 
 /**
- * Computes an HMAC-based One-Time Password (HOTP) as per RFC 4226.
- *
- * @param secret Base32-encoded secret key or Uint8Array
- * @param counter The 64-bit counter value
- * @param digits Number of digits (default: 6, supports 6-8)
- * @param algorithm Hash algorithm (default: SHA1)
- * @returns Formatted OTP string (e.g. "123456")
+ * 内部辅助函数：根据算法名称获取 Web Crypto HMAC 散列标识
+ */
+function getWebCryptoAlgorithmName(algo: OTPAlgorithm): string {
+  switch (algo) {
+    case "SHA256":
+      return "SHA-256";
+    case "SHA512":
+      return "SHA-512";
+    case "SHA1":
+    default:
+      return "SHA-1";
+  }
+}
+
+/**
+ * 基于 RFC 4226 标准实现 HMAC-Based One-Time Password (HOTP)
+ * @param secret Base32 编码的密钥字符串
+ * @param counter 计数器数值 (64位整数)
+ * @param digits 口令位数 (通常为 6 或 8 位)
+ * @param algorithm 散列算法 (SHA1/SHA256/SHA512)
+ * @returns 格式化后的动态验证码数字字符串 (如 "489201")
  */
 export async function generateHOTP(
-  secret: string | Uint8Array,
+  secret: string,
   counter: number,
-  digits: number = 6,
+  digits = 6,
   algorithm: OTPAlgorithm = "SHA1"
 ): Promise<string> {
-  const safeDigits = Math.min(Math.max(Number(digits) || 6, 6), 8);
-  const safeAlgo = ALLOWED_ALGORITHMS.includes(algorithm) ? algorithm : "SHA1";
-  const keyBytes = typeof secret === "string" ? base32ToUint8Array(secret) : secret;
+  const cleanSecret = secret.replace(/[\s\-]/g, "").toUpperCase();
+  const keyBytes = base32ToUint8Array(cleanSecret);
 
-  if (keyBytes.length === 0) {
-    throw new Error("Secret key cannot be empty");
-  }
+  // 1. 将计数器转换为 8 字节大端序 (Big-Endian) 二进制缓冲区
+  const counterBuffer = new ArrayBuffer(8);
+  const counterView = new DataView(counterBuffer);
+  // JavaScript 数字超过 32 位安全整数时进行高低位拆分写入
+  const high = Math.floor(counter / 0x100000000);
+  const low = counter % 0x100000000;
+  counterView.setUint32(0, high, false);
+  counterView.setUint32(4, low, false);
 
-  const hashName = getHashName(safeAlgo);
-
-  // Import key for HMAC
+  // 2. 导入 HMAC 密钥
   const cryptoKey = await globalThis.crypto.subtle.importKey(
     "raw",
     keyBytes,
-    { name: "HMAC", hash: { name: hashName } },
+    {
+      name: "HMAC",
+      hash: { name: getWebCryptoAlgorithmName(algorithm) },
+    },
     false,
     ["sign"]
   );
 
-  // Counter as 8-byte big-endian DataView
-  const counterBuffer = new ArrayBuffer(8);
-  const dataView = new DataView(counterBuffer);
-  const high = Math.floor(counter / 0x100000000);
-  const low = counter & 0xffffffff;
-  dataView.setUint32(0, high, false);
-  dataView.setUint32(4, low, false);
+  // 3. 计算 HMAC 签名散列
+  const hmacSignature = await globalThis.crypto.subtle.sign("HMAC", cryptoKey, counterBuffer);
+  const hmacBytes = new Uint8Array(hmacSignature);
 
-  // Sign with HMAC
-  const signature = await globalThis.crypto.subtle.sign("HMAC", cryptoKey, counterBuffer);
-  const hmacResult = new Uint8Array(signature);
+  // 4. 动态截断 (Dynamic Truncation - RFC 4226 Section 5.4)
+  const offset = hmacBytes[hmacBytes.length - 1] & 0x0f;
+  const binary =
+    ((hmacBytes[offset] & 0x7f) << 24) |
+    ((hmacBytes[offset + 1] & 0xff) << 16) |
+    ((hmacBytes[offset + 2] & 0xff) << 8) |
+    (hmacBytes[offset + 3] & 0xff);
 
-  // Dynamic truncation (RFC 4226 Section 5.3)
-  const offset = hmacResult[hmacResult.length - 1] & 0x0f;
-  const code =
-    ((hmacResult[offset] & 0x7f) << 24) |
-    ((hmacResult[offset + 1] & 0xff) << 16) |
-    ((hmacResult[offset + 2] & 0xff) << 8) |
-    (hmacResult[offset + 3] & 0xff);
-
-  const modulus = Math.pow(10, safeDigits);
-  const otpNumber = code % modulus;
-
-  return otpNumber.toString().padStart(safeDigits, "0");
+  // 5. 取模生成指定位数的动态验证码
+  const otp = binary % Math.pow(10, digits);
+  return otp.toString().padStart(digits, "0");
 }
 
 /**
- * Computes a Time-based One-Time Password (TOTP) as per RFC 6238.
- *
- * @param secret Base32-encoded secret key or Uint8Array
- * @param timestamp Optional epoch timestamp in milliseconds (defaults to Date.now())
- * @param period Time step in seconds (default: 30)
- * @param digits Number of digits (default: 6)
- * @param algorithm Hash algorithm (default: SHA1)
- * @returns The current TOTP code string
+ * 基于 RFC 6238 标准实现 Time-Based One-Time Password (TOTP)
+ * @param secret Base32 编码的密钥字符串
+ * @param timestamp 当前时间戳 (毫秒)，默认为当前系统时间 Date.now()
+ * @param period 验证码更新步长 (秒)，标准为 30 秒
+ * @param digits 验证码位数，默认为 6 位
+ * @param algorithm 散列算法，默认为 SHA1
+ * @returns 实时动态验证码
  */
 export async function generateTOTP(
-  secret: string | Uint8Array,
+  secret: string,
   timestamp: number = Date.now(),
-  period: number = 30,
-  digits: number = 6,
+  period = 30,
+  digits = 6,
   algorithm: OTPAlgorithm = "SHA1"
 ): Promise<string> {
-  const safePeriod = Math.min(Math.max(Number(period) || 30, 5), 600);
-  const epochSeconds = Math.floor(timestamp / 1000);
-  const counter = Math.floor(epochSeconds / safePeriod);
-  return await generateHOTP(secret, counter, digits, algorithm);
+  const counter = Math.floor(timestamp / 1000 / period);
+  return generateHOTP(secret, counter, digits, algorithm);
 }
 
 /**
- * Calculates remaining seconds in the current TOTP period.
+ * 计算当前周期内验证码的剩余有效秒数
+ * @param period 周期时长 (秒，如 30)
+ * @param timestamp 当前时间戳 (毫秒)
  */
-export function getRemainingSeconds(period: number = 30, timestamp: number = Date.now()): number {
-  const safePeriod = Math.min(Math.max(Number(period) || 30, 5), 600);
-  const epochSeconds = Math.floor(timestamp / 1000);
-  const elapsed = epochSeconds % safePeriod;
-  return safePeriod - elapsed;
+export function getRemainingSeconds(period = 30, timestamp: number = Date.now()): number {
+  const currentSeconds = Math.floor(timestamp / 1000);
+  const remainder = currentSeconds % period;
+  return period - remainder;
 }
 
 /**
- * Calculates time progress in the current TOTP period from 0.0 to 1.0.
+ * 计算当前周期的已耗时进度百分比 (0.0 ~ 1.0)
+ * @param period 周期时长 (秒)
+ * @param timestamp 当前时间戳 (毫秒)
  */
-export function getPeriodProgress(period: number = 30, timestamp: number = Date.now()): number {
-  const safePeriod = Math.min(Math.max(Number(period) || 30, 5), 600);
-  const epochSeconds = Math.floor(timestamp / 1000);
-  const elapsed = epochSeconds % safePeriod;
-  return elapsed / safePeriod;
+export function getPeriodProgress(period = 30, timestamp: number = Date.now()): number {
+  const secondsInPeriod = (timestamp / 1000) % period;
+  return secondsInPeriod / period;
 }
 
 /**
- * Parses an otpauth:// URL into an EntryPayload object with strict validation and sanitization.
- * Format: otpauth://totp/[Issuer:]Account?secret=SECRET&issuer=Issuer&algorithm=SHA1&digits=6&period=30
+ * 解析标准的 otpauth:// 协议链接 (如 Google Authenticator 二维码 URL)
+ * 示例: otpauth://totp/GitHub:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=GitHub&period=30
  */
-export function parseOtpAuthUri(uri: string): EntryPayload {
+export function parseOtpAuthUri(uri: string): ParsedOtpAuthUri {
   const trimmed = uri.trim();
   if (!trimmed.toLowerCase().startsWith("otpauth://")) {
-    throw new Error("Invalid URI scheme. Must start with otpauth://");
+    throw new Error("无效的 2FA 链接协议，必须以 otpauth:// 开头");
   }
 
-  // Parse URL safely without eval
-  let parsed: URL;
-  try {
-    parsed = new URL(trimmed);
-  } catch {
-    throw new Error("Malformed otpauth URI format");
-  }
-
-  if (parsed.protocol !== "otpauth:") {
-    throw new Error("Invalid URI scheme. Expected otpauth:");
-  }
-
-  const type = parsed.hostname.toLowerCase();
+  const url = new URL(trimmed);
+  const type = url.host.toLowerCase();
   if (type !== "totp" && type !== "hotp") {
-    throw new Error(`Unsupported OTP type: ${type}. Only TOTP is currently supported.`);
+    throw new Error(`不支持的 2FA 类型: ${type}，仅支持 totp 或 hotp`);
   }
 
-  // Extract label: /Issuer:Account or /Account
-  let label = decodeURIComponent(parsed.pathname.replace(/^\/+/, ""));
-  let issuer = "";
-  let account = "";
+  // 从 pathname 中解析服务商 (issuer) 与 账号 (account)
+  const fullLabel = decodeURIComponent(url.pathname.replace(/^\//, ""));
+  let labelIssuer = "";
+  let labelAccount = fullLabel;
 
-  if (label.includes(":")) {
-    const parts = label.split(":");
-    issuer = parts[0].trim();
-    account = parts.slice(1).join(":").trim();
-  } else {
-    account = label.trim();
+  if (fullLabel.includes(":")) {
+    const parts = fullLabel.split(":");
+    labelIssuer = parts[0].trim();
+    labelAccount = parts.slice(1).join(":").trim();
   }
 
-  const queryIssuer = parsed.searchParams.get("issuer");
-  if (queryIssuer) {
-    issuer = queryIssuer.trim();
+  const searchParams = url.searchParams;
+  const secret = searchParams.get("secret");
+  if (!secret) {
+    throw new Error("otpauth URI 中缺少必要的 secret 密钥参数");
   }
 
-  const rawSecret = parsed.searchParams.get("secret");
-  if (!rawSecret) {
-    throw new Error("Missing secret parameter in otpauth URI");
-  }
+  const issuerParam = searchParams.get("issuer");
+  const finalIssuer = issuerParam || labelIssuer || "2FA Service";
+  const finalAccount = labelAccount || finalIssuer;
 
-  // Sanitize secret: remove spaces and hyphens, uppercase
-  const cleanSecret = rawSecret.replace(/[\s\-]/g, "").toUpperCase();
-
-  // Validate Base32 format
-  try {
-    base32ToUint8Array(cleanSecret);
-  } catch {
-    throw new Error("Secret is not a valid Base32 encoded string");
-  }
-
-  // Parse algorithm safely
-  const rawAlgo = parsed.searchParams.get("algorithm")?.toUpperCase();
+  const rawAlgo = (searchParams.get("algorithm") || "SHA1").toUpperCase();
   let algorithm: OTPAlgorithm = "SHA1";
   if (rawAlgo === "SHA256" || rawAlgo === "SHA512") {
     algorithm = rawAlgo;
   }
 
-  // Parse digits safely (bounded between 6 and 8)
-  const rawDigits = parseInt(parsed.searchParams.get("digits") || "6", 10);
-  const digits = isNaN(rawDigits) ? 6 : Math.min(Math.max(rawDigits, 6), 8);
-
-  // Parse period safely (bounded between 5 and 600)
-  const rawPeriod = parseInt(parsed.searchParams.get("period") || "30", 10);
-  const period = isNaN(rawPeriod) ? 30 : Math.min(Math.max(rawPeriod, 5), 600);
-
-  // Truncate maximum string lengths to prevent storage/memory DoS
-  const safeIssuer = (issuer || account || "2FA").slice(0, 100);
-  const safeAccount = (account || issuer || "Account").slice(0, 100);
+  const digits = parseInt(searchParams.get("digits") || "6", 10);
+  const period = parseInt(searchParams.get("period") || "30", 10);
+  const counterParam = searchParams.get("counter");
+  const counter = counterParam ? parseInt(counterParam, 10) : undefined;
 
   return {
-    issuer: safeIssuer,
-    account: safeAccount,
-    secret: cleanSecret.slice(0, 256),
+    type,
+    issuer: finalIssuer,
+    account: finalAccount,
+    secret: secret.replace(/[\s\-]/g, "").toUpperCase(),
     algorithm,
-    digits,
-    period,
+    digits: isNaN(digits) ? 6 : digits,
+    period: isNaN(period) ? 30 : period,
+    counter,
   };
 }

@@ -1,11 +1,23 @@
+/**
+ * @file repositories/index.ts
+ * @description SQLite 数据访问仓储层 (Repository Pattern)
+ * 封装 VaultMetadata 和 AuthenticatorEntry 的 CRUD 操作，提供双重驱动回退（原生 SQLite 执行与 Kysely 查询构建器）。
+ */
+
 import type { AuthenticatorEntry, VaultMetadata } from "@sa/core";
+import * as SQLite from "expo-sqlite";
 import type { Kysely } from "kysely";
 import type { Database } from "../database";
-import * as SQLite from "expo-sqlite";
 
+/**
+ * 主保险库元数据仓储 (VaultRepository)
+ */
 export class VaultRepository {
   constructor(private db: Kysely<Database>) {}
 
+  /**
+   * 持久化写入新保险库元数据
+   */
   async createVault(vault: VaultMetadata): Promise<void> {
     try {
       const expoDb = await SQLite.openDatabaseAsync("2fas.db");
@@ -32,6 +44,9 @@ export class VaultRepository {
     }
   }
 
+  /**
+   * 根据 ID 查询特定保险库
+   */
   async getVaultById(id: string): Promise<VaultMetadata | undefined> {
     return await this.db
       .selectFrom("vault_metadata")
@@ -40,6 +55,9 @@ export class VaultRepository {
       .executeTakeFirst();
   }
 
+  /**
+   * 获取本地所有已创建的保险库列表
+   */
   async getAllVaults(): Promise<VaultMetadata[]> {
     return await this.db
       .selectFrom("vault_metadata")
@@ -48,6 +66,9 @@ export class VaultRepository {
       .execute();
   }
 
+  /**
+   * 更新保险库元数据 (如修改名称或重置主密码派生参数)
+   */
   async updateVault(id: string, updates: Partial<VaultMetadata>): Promise<void> {
     await this.db
       .updateTable("vault_metadata")
@@ -59,14 +80,23 @@ export class VaultRepository {
       .execute();
   }
 
+  /**
+   * 删除指定保险库
+   */
   async deleteVault(id: string): Promise<void> {
     await this.db.deleteFrom("vault_metadata").where("id", "=", id).execute();
   }
 }
 
+/**
+ * 2FA 动态口令密文条目仓储 (AuthenticatorEntryRepository)
+ */
 export class AuthenticatorEntryRepository {
   constructor(private db: Kysely<Database>) {}
 
+  /**
+   * 创建并持久化一条新的 2FA 密文条目
+   */
   async createEntry(entry: AuthenticatorEntry): Promise<void> {
     const favoriteInt = entry.favorite ? 1 : 0;
     const sortOrderInt = Number(entry.sortOrder) || 0;
@@ -90,7 +120,7 @@ export class AuthenticatorEntryRepository {
         ]
       );
     } catch {
-      // Fallback to kysely
+      // 回退至 Kysely ORM 插入
       await this.db
         .insertInto("authenticator_entries")
         .values({
@@ -102,6 +132,9 @@ export class AuthenticatorEntryRepository {
     }
   }
 
+  /**
+   * 根据 ID 获取单个 2FA 密文记录
+   */
   async getEntryById(id: string): Promise<AuthenticatorEntry | undefined> {
     const row: any = await this.db
       .selectFrom("authenticator_entries")
@@ -116,6 +149,9 @@ export class AuthenticatorEntryRepository {
     };
   }
 
+  /**
+   * 根据保险库 ID 获取其下的全部 2FA 账号列表 (按排序与创建时间排列)
+   */
   async getEntriesByVaultId(vaultId: string): Promise<AuthenticatorEntry[]> {
     try {
       const expoDb = await SQLite.openDatabaseAsync("2fas.db");
@@ -143,6 +179,9 @@ export class AuthenticatorEntryRepository {
     }
   }
 
+  /**
+   * 更新指定 2FA 账号 (如修改收藏状态、备注或重排序)
+   */
   async updateEntry(id: string, updates: Partial<AuthenticatorEntry>): Promise<void> {
     const sanitizedUpdates: any = {
       ...updates,
@@ -159,6 +198,9 @@ export class AuthenticatorEntryRepository {
       .execute();
   }
 
+  /**
+   * 根据 ID 删除 2FA 账号记录
+   */
   async deleteEntry(id: string): Promise<void> {
     try {
       const expoDb = await SQLite.openDatabaseAsync("2fas.db");
