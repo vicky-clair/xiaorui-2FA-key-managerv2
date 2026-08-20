@@ -14,10 +14,13 @@
 4. [核心业务时序与数据流向](#4-核心业务时序与数据流向)
 5. [商业化会员与离线授权体系](#5-商业化会员与离线授权体系)
 6. [跨平台构建与 Electron 单文件 EXE 打包](#6-跨平台构建与-electron-单文件-exe-打包)
-7. [常见易出现问题与踩坑解决方案 (Troubleshooting)](#7-常见易出现问题与踩坑解决方案-troubleshooting)
+7. [常见易出现问题与踩坑排查实录 (Troubleshooting & FAQs)](#11-常见易出现问题与踩坑排查实录-troubleshooting--faqs)
 8. [本地数据存储位置与彻底销毁机制 (Data Storage & Destruction)](#8-本地数据存储位置与彻底销毁机制-data-storage--destruction)
 9. [防数据丢失与安全灾备指引 (Data Loss Prevention)](#9-防数据丢失与安全灾备指引-data-loss-prevention)
-10. [未来演进路线 (Roadmap)](#10-未来演进路线-roadmap)
+10. [全端应用图标自定义与修改指引 (Icon Customization)](#12-全端应用图标自定义与修改指引-icon-customization)
+11. [微软应用商店 (Microsoft Store) 与 Edge 扩展上架实战](#13-微软应用商店-microsoft-store-与-edge-扩展上架实战)
+12. [GitHub Releases 官方版本发布指引 (GitHub Releases)](#14-github-releases-官方版本发布指引-github-releases)
+13. [未来演进路线 (Roadmap)](#15-未来演进路线-roadmap)
 
 ---
 
@@ -333,10 +336,75 @@ sequenceDiagram
 
 ---
 
-## 12. 未来演进路线 (Roadmap)
+## 12. 全端应用图标自定义与修改指引 (Icon Customization)
+
+本项目支持 Windows 桌面端、移动端/Web 端与浏览器扩展的全套图标自定义：
+
+### 12.1 Windows 桌面端应用图标 (EXE / AppX / MSIX)
+- **文件格式**：标准的 Windows 多分辨率图标文件 **`icon.ico`**（需包含 256x256、128x128、48x48、32x32 像素）；
+- **存放路径**：[`apps/desktop/build/icon.ico`](file:///c:/XMWJJ/xiaorui-2FA-key-managerv2/apps/desktop/build)；
+- **重新打包生效**：
+  ```bash
+  bun run build:exe   # 重新生成带新图标的便携版 EXE
+  bun run build:msix  # 重新生成带新图标的微软商店 AppX 包
+  ```
+
+### 12.2 前端与移动端/网页图标 (Expo & Web)
+- **存放路径**：[`apps/expo/assets/images/`](file:///c:/XMWJJ/xiaorui-2FA-key-managerv2/apps/expo/assets/images)
+  - `icon.png` (1024×1024)：移动端与主应用高清大图标；
+  - `favicon.png` (48×48 / 32×32)：Web 网页浏览器标签页小图标；
+  - `splash-icon.png` (200×200)：启动闪屏界面居中展示的 LOGO；
+  - `android-icon-foreground.png` (512×512)：Android 自适应图标前景。
+
+### 12.3 浏览器扩展图标 (Chrome / Edge / Firefox)
+- **存放路径**：[`apps/browser-extension/icons/`](file:///c:/XMWJJ/xiaorui-2FA-key-managerv2/apps/browser-extension/icons)
+  - `icon-16.png` (16×16)
+  - `icon-48.png` (48×48)
+  - `icon-128.png` (128×128)
+  - `icon-300.png` (300×300，商店展示 Logo)
+  - `icon-512.png` (512×512，高清商店大图)
+- **一键打包生成提审 ZIP**：
+  ```bash
+  bun run package:extension-zip
+  ```
+
+---
+
+## 13. 微软应用商店 (Microsoft Store) 与 Edge 扩展上架实战
+
+本项目已完全通过微软官方商店合规性检测（100% Passed），详细提审指引见 [`docs/MICROSOFT_STORE_SUBMISSION.md`](file:///c:/XMWJJ/xiaorui-2FA-key-managerv2/docs/MICROSOFT_STORE_SUBMISSION.md)。
+
+### 13.1 打包格式对比与最佳实践
+- **`.appx / MSIX`（最推荐）**：支持微软商店后台全自动静默差量更新、沙箱安全隔离、免购买第三方代码签名证书（由微软官方代签）；
+  - 打包命令：`bun run build:msix`
+  - 产物路径：`apps/desktop/release/Xiaorui 2FA Security Vault 1.0.0.appx`
+- **Win32 EXE**：单文件便携绿色版，适合快速提交或 GitHub 分发；
+  - 打包命令：`bun run build:exe`
+
+### 13.2 Edge 扩展提审
+- 运行 `bun run package:extension-zip` 生成标准提审压缩包：
+  `apps/browser-extension/release/xiaorui-2fa-security-vault-extension.zip`
+- 直接在 [Microsoft Edge Add-ons 开发者后台](https://partner.microsoft.com/dashboard/microsoftedge/overview) 上传发布。
+
+---
+
+## 14. GitHub Releases 官方版本发布指引 (GitHub Releases)
+
+1. 在本地或 CI 中生成 3 大官方分发物：
+   - Windows 便携版 EXE：`apps/desktop/release/Xiaorui 2FA Security Vault 1.0.0.exe`
+   - 微软商店标准包 AppX：`apps/desktop/release/Xiaorui 2FA Security Vault 1.0.0.appx`
+   - 浏览器插件压缩包 ZIP：`apps/browser-extension/release/xiaorui-2fa-security-vault-extension.zip`
+2. 打开 GitHub 仓库 [Create a new release 页面](https://github.com/vicky-clair/xiaorui-2FA-key-managerv2/releases/new)；
+3. 选择对应的 Tag（如 `v1.1.0`），粘贴 `CHANGELOG.md` 更新日志；
+4. 将上述 3 个文件直接拖入附件上传区域，点击 **「Publish release」** 完成全网发布。
+
+---
+
+## 15. 未来演进路线 (Roadmap)
 
 - [x] **v1.0.0 (核心发布)**：Argon2id + AES-256-GCM 零知识双层信封加密、两行式响应式 UI、单文件绿色便携 EXE 打包、19 项全量单元测试覆盖。
-- [x] **v1.1.0 (浏览器扩展与跨端联动)**：Chrome / Edge / Firefox (Manifest V3) 扩展上线，实现网页 2FA 专属二维码识别、跨域 Canvas 穿透、`secureauth://` 系统协议一键直接拉起桌面端软件与锁定后自动衔接。
+- [x] **v1.1.0 (全平台升级与跨端联动)**：全面更名为 **Xiaorui 2FA Security Vault**，Chrome / Edge / Firefox (Manifest V3) 扩展上线，实现网页 2FA 专属二维码识别、跨域 Canvas 穿透、`secureauth://` 系统协议一键直接拉起桌面端软件与锁定后自动衔接，支持微软商店 MSIX/AppX 封装与发布指引。
 - [ ] **v1.2.0**：集成 Windows Hello 原生生物识别（指纹/人脸）快速解锁（基于 WinRT / DPAPI 硬件密钥存储）。
 - [ ] **v2.0.0**：多设备局域网 P2P 端到端加密扫码安全同步（基于 WebRTC / Noise Protocol，杜绝中心服务器）。
+
 
