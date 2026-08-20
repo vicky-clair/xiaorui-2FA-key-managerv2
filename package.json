@@ -13,6 +13,7 @@
     "build:web": "bun --cwd apps/expo expo export --platform web",
     "build:exe": "bun --cwd apps/expo expo export --platform web && bun --cwd apps/desktop electron-builder --win portable",
     "build:extension": "bun run scripts/generate-icons.ts && bun run scripts/build-extension.ts",
+    "package:extension-zip": "bun run build:extension && bun run scripts/package-extension-zip.ts",
     "test": "bun test",
     "lint": "biome check .",
     "format": "biome format --write ."

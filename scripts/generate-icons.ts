@@ -94,7 +94,7 @@ function createChunk(type: string, data: Buffer): Buffer {
   return Buffer.concat([lenBuf, typeAndData, crcBuf]);
 }
 
-const ICON_SIZES = [16, 48, 128];
+const ICON_SIZES = [16, 48, 128, 256, 300, 512];
 const OUTPUT_DIR = path.resolve(__dirname, "../apps/browser-extension/icons");
 
 if (!fs.existsSync(OUTPUT_DIR)) {
@@ -107,3 +107,4 @@ for (const size of ICON_SIZES) {
   fs.writeFileSync(outPath, pngBuf);
   console.log(`✅ Generated PNG icon: ${outPath} (${size}x${size}, ${pngBuf.length} bytes)`);
 }
+
