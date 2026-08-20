@@ -62,6 +62,23 @@ export class EntitlementService {
     }
   }
 
+  isPro(): boolean {
+    return this.plan === "pro";
+  }
+
+  activateLicense(key: string): { success: boolean; message: string } {
+    try {
+      const status = verifyLicenseKey(key);
+      if (status.tier === "PRO") {
+        this.plan = "pro";
+        return { success: true, message: "已成功激活 Pro 商业版会员！" };
+      }
+      return { success: false, message: "无效的激活码" };
+    } catch (err: any) {
+      return { success: false, message: err?.message || "激活失败" };
+    }
+  }
+
   canExportBackup(): boolean {
     return this.plan === "pro";
   }
@@ -110,3 +127,6 @@ export function verifyLicenseKey(key: string): LicenseStatus {
 
   throw new Error("无效的 PRO 授权激活码，请检查后重新输入");
 }
+
+export const defaultEntitlementService = new EntitlementService("free");
+

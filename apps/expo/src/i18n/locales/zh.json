@@ -65,5 +65,15 @@
   "autoLock": "自动锁定",
   "autoLockMinutes": "{{count}} 分钟无操作",
   "autoLockNever": "从不自动锁定",
-  "autoLockSetSuccess": "自动锁定时间已设置为：{{time}}"
+  "autoLockSetSuccess": "自动锁定时间已设置为：{{time}}",
+  "authNoticeTitle": "重要安全说明",
+  "noticeLocalTitle": "本地存储 · 安全可靠：",
+  "noticeLocalDesc": "所有 2FA 密钥与数据均在本地采用 Argon2id 与 AES-256-GCM 高强度端到端加密，不上传任何云端服务器，完全由您自主掌控。",
+  "noticePasswordTitle": "主密码无法找回：",
+  "noticePasswordDesc": "主密码是解密的唯一凭据且不被记录，若遗忘将无法找回或重置保险库。",
+  "noticeBackupTitle": "数据请及时备份：",
+  "noticeBackupDesc": "数据仅保存在本设备，请务必定期导出加密备份文件 (.sav)。若设备损坏、丢失或应用卸载且未备份，数据将无法恢复！",
+  "unlockNoticeTitle": "安全与数据提示",
+  "unlockNoticeDesc": "所有 2FA 数据均在本地端到端加密保护。请妥善保管主密码并定期导出备份，如遇设备丢失或卸载，未备份数据将无法恢复。",
+  "unlockBackupDesc": "数据仅保存在本设备，请务必定期导出加密备份文件。若遇到设备损坏或数据清理且未备份，数据将无法恢复！"
 }

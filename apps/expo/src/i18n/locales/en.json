@@ -65,5 +65,15 @@
   "autoLock": "Auto-Lock",
   "autoLockMinutes": "{{count}} min inactivity",
   "autoLockNever": "Never auto-lock",
-  "autoLockSetSuccess": "Auto-lock timeout set to {{time}}"
+  "autoLockSetSuccess": "Auto-lock timeout set to {{time}}",
+  "authNoticeTitle": "Important Security Notice",
+  "noticeLocalTitle": "Local & Secure Storage: ",
+  "noticeLocalDesc": "All 2FA keys are end-to-end encrypted with Argon2id and AES-256-GCM locally. Zero cloud uploads, 100% private and secure.",
+  "noticePasswordTitle": "Password Irrecoverable: ",
+  "noticePasswordDesc": "Your master password is never stored and cannot be reset if lost. Please keep it safe.",
+  "noticeBackupTitle": "Backup Promptly: ",
+  "noticeBackupDesc": "Data is stored strictly on this device. Regularly export encrypted (.sav) backups. Without a backup, lost or wiped data cannot be recovered!",
+  "unlockNoticeTitle": "Security & Data Notice",
+  "unlockNoticeDesc": "All 2FA data is locally encrypted end-to-end. Please keep your master password safe and backup regularly—lost data without a backup cannot be recovered.",
+  "unlockBackupDesc": "Data is stored strictly on this device. Regularly export encrypted backups. Without a backup, lost or wiped data cannot be recovered!"
 }

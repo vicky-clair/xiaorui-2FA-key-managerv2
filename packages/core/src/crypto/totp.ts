@@ -5,8 +5,9 @@
  */
 
 import { base32ToUint8Array } from "./base32";
+import type { OTPAlgorithm } from "../types/domain";
 
-export type OTPAlgorithm = "SHA1" | "SHA256" | "SHA512";
+export { type OTPAlgorithm };
 
 export interface ParsedOtpAuthUri {
   type: "totp" | "hotp";
@@ -38,9 +39,9 @@ function getWebCryptoAlgorithmName(algo: OTPAlgorithm): string {
  * 基于 RFC 4226 标准实现 HMAC-Based One-Time Password (HOTP)
  * @param secret Base32 编码的密钥字符串
  * @param counter 计数器数值 (64位整数)
- * @param digits 口令位数 (通常为 6 或 8 位)
- * @param algorithm 散列算法 (SHA1/SHA256/SHA512)
- * @returns 格式化后的动态验证码数字字符串 (如 "489201")
+ * @param digits 生成口令的位数，默认为 6 位 (RFC 标准支持 6-8 位)
+ * @param algorithm 散列算法，默认为 SHA1
+ * @returns 格式化后的数字验证码字符串 (前置补 0)
  */
 export async function generateHOTP(
   secret: string,
@@ -63,7 +64,7 @@ export async function generateHOTP(
   // 2. 导入 HMAC 密钥
   const cryptoKey = await globalThis.crypto.subtle.importKey(
     "raw",
-    keyBytes,
+    keyBytes as any as BufferSource,
     {
       name: "HMAC",
       hash: { name: getWebCryptoAlgorithmName(algorithm) },
@@ -135,43 +136,78 @@ export function getPeriodProgress(period = 30, timestamp: number = Date.now()): 
  * 示例: otpauth://totp/GitHub:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=GitHub&period=30
  */
 export function parseOtpAuthUri(uri: string): ParsedOtpAuthUri {
-  const trimmed = uri.trim();
-  if (!trimmed.toLowerCase().startsWith("otpauth://")) {
+  let cleanUri = uri.trim();
+  if (cleanUri.includes("?uri=")) {
+    const idx = cleanUri.indexOf("?uri=");
+    cleanUri = decodeURIComponent(cleanUri.substring(idx + 5));
+  }
+  if (cleanUri.startsWith("otpauth%3A%2F%2F") || cleanUri.startsWith("otpauth%3a%2f%2f")) {
+    cleanUri = decodeURIComponent(cleanUri);
+  }
+
+  if (!cleanUri.toLowerCase().startsWith("otpauth://") && !cleanUri.toLowerCase().startsWith("otpauth:/")) {
     throw new Error("无效的 2FA 链接协议，必须以 otpauth:// 开头");
   }
 
-  const url = new URL(trimmed);
-  const type = url.host.toLowerCase();
-  if (type !== "totp" && type !== "hotp") {
-    throw new Error(`不支持的 2FA 类型: ${type}，仅支持 totp 或 hotp`);
+  // 1. 使用正则稳妥提取 type (totp / hotp) 与 剩余路径和查询参数
+  const typeMatch = cleanUri.match(/^otpauth:\/+(totp|hotp)(\/[^?]+)?(\?.*)?$/i);
+  
+  let type: "totp" | "hotp" = "totp";
+  let pathPart = "";
+  let queryPart = "";
+
+  if (typeMatch) {
+    type = typeMatch[1].toLowerCase() as "totp" | "hotp";
+    pathPart = typeMatch[2] ? typeMatch[2].replace(/^\/+/, "") : "";
+    queryPart = typeMatch[3] || "";
+  } else {
+    // 降级使用 URL 兼容提取
+    try {
+      const url = new URL(cleanUri);
+      let host = url.host ? url.host.toLowerCase() : "";
+      let pathname = url.pathname.replace(/^\/+/, "");
+      if (!host && pathname) {
+        const segs = pathname.split("/");
+        host = segs[0].toLowerCase();
+        pathname = segs.slice(1).join("/");
+      }
+      type = host === "hotp" ? "hotp" : "totp";
+      pathPart = pathname;
+      queryPart = url.search;
+    } catch {
+      type = "totp";
+    }
   }
 
-  // 从 pathname 中解析服务商 (issuer) 与 账号 (account)
-  const fullLabel = decodeURIComponent(url.pathname.replace(/^\//, ""));
+  // 2. 从 pathPart 中解析服务商 (issuer) 与 账号 (account)
   let labelIssuer = "";
-  let labelAccount = fullLabel;
-
-  if (fullLabel.includes(":")) {
-    const parts = fullLabel.split(":");
-    labelIssuer = parts[0].trim();
-    labelAccount = parts.slice(1).join(":").trim();
+  let labelAccount = "";
+  if (pathPart) {
+    const fullLabel = decodeURIComponent(pathPart);
+    if (fullLabel.includes(":")) {
+      const parts = fullLabel.split(":");
+      labelIssuer = parts[0].trim();
+      labelAccount = parts.slice(1).join(":").trim();
+    } else {
+      labelAccount = fullLabel.trim();
+    }
   }
 
-  const searchParams = url.searchParams;
+  // 3. 解析 searchParams
+  const searchParams = new URLSearchParams(queryPart);
   const secret = searchParams.get("secret");
   if (!secret) {
     throw new Error("otpauth URI 中缺少必要的 secret 密钥参数");
   }
 
   const issuerParam = searchParams.get("issuer");
-  const finalIssuer = issuerParam || labelIssuer || "2FA Service";
+  const finalIssuer = issuerParam ? issuerParam.trim() : (labelIssuer || "2FA Service");
   const finalAccount = labelAccount || finalIssuer;
 
   const rawAlgo = (searchParams.get("algorithm") || "SHA1").toUpperCase();
   let algorithm: OTPAlgorithm = "SHA1";
-  if (rawAlgo === "SHA256" || rawAlgo === "SHA512") {
-    algorithm = rawAlgo;
-  }
+  if (rawAlgo === "SHA256" || rawAlgo === "SHA-256") algorithm = "SHA256";
+  if (rawAlgo === "SHA512" || rawAlgo === "SHA-512") algorithm = "SHA512";
 
   const digits = parseInt(searchParams.get("digits") || "6", 10);
   const period = parseInt(searchParams.get("period") || "30", 10);
@@ -182,7 +218,7 @@ export function parseOtpAuthUri(uri: string): ParsedOtpAuthUri {
     type,
     issuer: finalIssuer,
     account: finalAccount,
-    secret: secret.replace(/[\s\-]/g, "").toUpperCase(),
+    secret: secret.replace(/[\s\-_=]/g, "").toUpperCase(),
     algorithm,
     digits: isNaN(digits) ? 6 : digits,
     period: isNaN(period) ? 30 : period,

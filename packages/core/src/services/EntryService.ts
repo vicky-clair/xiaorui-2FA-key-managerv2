@@ -35,6 +35,7 @@ export async function createEntry(
   payload: EntryPayload,
   vaultId: string,
   vaultKey: Uint8Array,
+  options?: { favorite?: boolean; sortOrder?: number },
 ): Promise<EntryMetadata> {
   const jsonPayload = JSON.stringify(payload);
   const encrypted = await encryptAES256GCM(jsonPayload, vaultKey);
@@ -44,7 +45,9 @@ export async function createEntry(
     vaultId,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    encryptedData: encrypted.ciphertext,
+    favorite: options?.favorite ?? false,
+    sortOrder: options?.sortOrder ?? 0,
+    ciphertext: encrypted.ciphertext,
     nonce: encrypted.nonce,
     authTag: encrypted.authTag,
   };
@@ -62,7 +65,7 @@ export async function decryptEntry(
 ): Promise<EntryPayload> {
   const jsonPayload = await decryptAES256GCM(
     {
-      ciphertext: entry.encryptedData,
+      ciphertext: entry.ciphertext,
       nonce: entry.nonce,
       authTag: entry.authTag,
     },
@@ -71,3 +74,6 @@ export async function decryptEntry(
 
   return JSON.parse(jsonPayload) as EntryPayload;
 }
+
+export const createEncryptedEntry = createEntry;
+export const decryptEntryPayload = decryptEntry;

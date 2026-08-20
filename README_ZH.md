@@ -120,11 +120,19 @@ apps/desktop/release/Secure Authenticator 1.0.0.exe
 
 ---
 
-## 🔒 安全建议
+## 🔒 安全与数据保护说明 (Security & Data Protection)
 
-1. **切勿泄露您的主密码或 `.sav` 备份文件及备份密码。**
-2. 在公共或多人工位电脑上使用时，建议开启 **1分钟或5分钟自动锁定**。
-3. 导出备份时，建议设置与保险库主密码不同的高强度专属备份密码。
+### 1. 本地存储位置
+- **Windows 桌面端**：`%APPDATA%\Secure Authenticator\Partitions\xiaorui_vault\` (即 `C:\Users\<用户名>\AppData\Roaming\Secure Authenticator\`)
+- **数据文件**：包含经 `AES-256-GCM` 强加密的 SQLite 数据库与用户偏好设置。
+
+### 2. 彻底销毁与重置原理 (Delete = Permanent Destruction)
+- **100% 纯本地离线（Zero Cloud）**：本项目没有任何远程云端服务器备份，所有密文仅保存在您的物理电脑上。
+- **物理删除即彻底销毁**：直接删除 `%APPDATA%\Secure Authenticator` 文件夹或在主界面删除账号卡片，磁盘密文直接被移除，无法通过任何云端或逆向手段找回。
+
+### 3. 如何防止数据意外丢失 (Anti-Data-Loss Best Practices)
+- ⚠️ **主密码不可找回**：主密码采用 Argon2id 散列，未在任何地方明文存储。若遗忘主密码，没有任何人能解密数据。
+- 📦 **定期导出 `.sav` 备份**：建议在添加重要 2FA 账号后，点击顶部工具栏的 **`📦 导出备份`**，输入独立密码生成 `.sav` 备份文件，并将其复制至离线 U 盘或移动硬盘妥善保管（遵循 3-2-1 备份原则）。
 
 ---
 

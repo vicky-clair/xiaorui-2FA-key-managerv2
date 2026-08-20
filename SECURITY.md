@@ -1,16 +1,33 @@
-# Security Policy
+# 🛡️ 安全策略与开发红线 (Security Policy & Red Lines)
 
-## Red Lines
-As explicitly defined in the project architecture document, the following operations are strictly forbidden:
+## 🚨 核心开发红线 (Development Red Lines)
 
-1. Never upload the TOTP Secret to the server.
-2. Never write the Master Password to logs.
-3. Never upload the Vault in plaintext.
-4. Never store License Private Keys on the client.
-5. Browser Extensions must not read the database directly.
-6. Do not store the long-term Vault Key in React State.
-7. Do not store Secrets in `localStorage`.
-8. Do not store the Master Password in `AsyncStorage` or `SecureStore`.
-9. Never use `eval()` or dynamic code execution on user input or scanned QR codes.
+为确保本项目达到顶级安全与零知识（Zero-Knowledge）防护标准，**所有代码贡献与维护必须严格恪守以下红线**：
 
-All code contributions MUST adhere to these strict security limits.
+1. **🚫 严禁上传明文密钥：** 绝对禁止将 2FA / TOTP 明文 Secret 上传至任何远程服务器或第三方接口。
+2. **🚫 严禁打印敏感日志：** 绝对禁止在 `console.log`、系统崩溃报告或调试信息中输出用户主密码、解密后明文密钥或加密派生 Key。
+3. **🚫 严禁明文持久化：** 数据库（SQLite）中必须全量存储 AES-256-GCM 密文字节，严禁存储明文 Vault 或明文条目。
+4. **🚫 严禁在客户端保存许可私钥：** 软件激活与许可校验采用非对称密码学公钥验证，严禁在客户端硬编码私钥。
+5. **🚫 严禁无授权跨进程访问：** 后续浏览器扩展或辅助进程不得直接绕过认证读取本地数据库。
+6. **🚫 严禁长期持久化 VaultKey：** 解锁后的内存数据密钥只能通过带 `wipeBytes` 擦除保证的上下文流转，超时（自动锁定）或退出时必须物理清零覆盖。
+7. **🚫 严禁在 LocalStorage / Cookie 中保存 Secret：** Web 存储极易受到 XSS 或扩展脚本窥探，明文密钥严禁进入此类非安全存储。
+8. **🚫 严禁在系统 KeyChain 中明文存密码：** 主密码只存在于用户大脑中，不可被明文托管。
+9. **🚫 严禁动态代码执行：** 绝对禁止使用 `eval()`、`new Function()` 等危险函数处理用户输入、导入内容或二维码扫描数据。
+
+---
+
+## 💾 数据存储与物理销毁 (Data Storage & Destruction)
+
+- **本地存储位置**：
+  - Windows: `%APPDATA%\Secure Authenticator\Partitions\xiaorui_vault\`
+  - 数据文件包括本地 SQLite 加密数据库及用户偏好配置。
+- **物理销毁原则**：
+  - 本应用没有任何云端数据库或同步服务器，所有信息仅保存在本地设备。
+  - 删除 `%APPDATA%\Secure Authenticator` 目录即彻底物理抹除所有本地密文，**数据彻底销毁且无法逆向找回**。
+
+---
+
+## 🛡️ 防数据丢失指引 (Data Loss Prevention)
+
+- **主密码不可找回**：主密码采用 Argon2id 散列，未在任何地方明文存储。若遗忘主密码，无法通过“找回密码”重置。
+- **定期加密备份**：用户应养成定期点击 `📦 导出备份` 的习惯，生成独立的 `.sav` 加密备份文件，并妥善保存在安全的离线介质（如移动硬盘、U 盘）中。

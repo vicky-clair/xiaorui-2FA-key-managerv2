@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Secure Authenticator 2FA</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div id="app" class="app-container">
+    <!-- 顶部导航栏 -->
+    <header class="popup-header">
+      <div class="brand">
+        <span class="brand-icon">🛡️</span>
+        <span class="brand-name">Secure Authenticator</span>
+      </div>
+      <div class="header-actions" id="header-actions" style="display: none;">
+        <button class="btn-icon" id="btn-add" title="手动添加 2FA">➕</button>
+        <button class="btn-icon btn-danger" id="btn-lock" title="锁定保险库">🔒</button>
+      </div>
+    </header>
+
+    <!-- 1. 首次初始化 / 创建主密码视图 -->
+    <section id="view-setup" class="view-panel" style="display: none;">
+      <div class="auth-box">
+        <div class="auth-emblem">🔐</div>
+        <h2>创建主保险库</h2>
+        <p class="auth-desc">请设置一个主密码以启用本地高强度加密保护。</p>
+
+        <div class="form-field">
+          <input type="password" id="setup-pwd" class="input-text" placeholder="设置主密码 (至少 6 位)" />
+        </div>
+        <div class="form-field">
+          <input type="password" id="setup-pwd-confirm" class="input-text" placeholder="确认主密码" />
+        </div>
+        <div class="error-msg" id="setup-error" style="display: none;"></div>
+
+        <button class="btn-primary" id="btn-do-setup">创建并初始化保险库</button>
+
+        <div class="safety-tip">
+          🔒 数据仅在本地加密存储，主密码不被保存且无法找回。
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 输入主密码解锁视图 -->
+    <section id="view-unlock" class="view-panel" style="display: none;">
+      <div class="auth-box">
+        <div class="auth-emblem">🛡️</div>
+        <h2>解锁 2FA 保险库</h2>
+        <p class="auth-desc">请输入主密码以解密查看您的动态验证码。</p>
+
+        <div class="form-field">
+          <input type="password" id="unlock-pwd" class="input-text" placeholder="请输入主密码" autofocus />
+        </div>
+        <div class="error-msg" id="unlock-error" style="display: none;"></div>
+
+        <button class="btn-primary" id="btn-do-unlock">解锁保险库</button>
+
+        <div class="safety-tip">
+          ⚡ 纯本地离线端到端加密，零云端上传。
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. 主界面 (已解锁) -->
+    <section id="view-main" class="view-panel" style="display: none;">
+      <!-- 待导入提示横幅 (若检测到网页中的 2FA) -->
+      <div id="pending-banner" class="pending-banner" style="display: none;">
+        <div class="pending-info">
+          <span>📥</span>
+          <span id="pending-banner-text">检测到当前网页有 2FA 密钥</span>
+        </div>
+        <button class="btn-sm-primary" id="btn-import-pending">拉起软件</button>
+      </div>
+
+      <!-- 快捷动作栏 -->
+      <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+        <button id="btn-scan-current-page" style="flex: 1; height: 34px; background: linear-gradient(135deg, rgba(37, 99, 235, 0.25) 0%, rgba(29, 78, 216, 0.25) 100%); border: 1px solid rgba(59, 130, 246, 0.4); color: #60a5fa; border-radius: 8px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px;">
+          <span>🔍</span> 扫描当前网页
+        </button>
+        <button id="btn-upload-qr" style="flex: 1; height: 34px; background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.12); color: #cbd5e1; border-radius: 8px; font-size: 11.5px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 4px;">
+          <span>📷</span> 选图识别导入
+        </button>
+        <input type="file" id="input-qr-file" accept="image/*" style="display: none;" />
+      </div>
+
+      <!-- 搜索栏 -->
+      <div class="search-bar">
+        <input type="text" id="search-input" class="search-input" placeholder="🔍 快速搜索账号..." />
+      </div>
+
+      <!-- 2FA 账号列表容器 -->
+      <div class="entries-scroll" id="entries-list">
+        <!-- 动态渲染 2FA 卡片 -->
+      </div>
+
+      <!-- 空状态 -->
+      <div id="empty-state" class="empty-state" style="display: none;">
+        <div class="empty-icon">🛡️</div>
+        <div class="empty-title">暂无 2FA 动态口令</div>
+        <div class="empty-desc">在网页中打开 2FA 绑定二维码，将自动识别并提示导入；或点击右上角「➕」手动添加。</div>
+      </div>
+    </section>
+
+    <!-- 4. 添加 2FA 模态层 -->
+    <div id="modal-add-entry" class="popup-modal" style="display: none;">
+      <div class="modal-card">
+        <div class="modal-title">
+          <span>➕ 添加 2FA 账号</span>
+          <button class="modal-close" id="btn-close-add-modal">✕</button>
+        </div>
+
+        <div class="form-field">
+          <label>服务提供商 (平台名称):</label>
+          <input type="text" id="add-issuer" class="input-text" placeholder="例如: GitHub, 谷歌, 币安" />
+        </div>
+
+        <div class="form-field">
+          <label>账号备注 / 认证文件名:</label>
+          <input type="text" id="add-account" class="input-text" placeholder="例如: 工作主账号 / personal@gmail.com" />
+        </div>
+
+        <div class="form-field">
+          <label>2FA 密钥代码 (Base32 或 otpauth://):</label>
+          <input type="text" id="add-secret" class="input-text" placeholder="粘贴网站提供的密钥代码" />
+        </div>
+
+        <div class="error-msg" id="add-error" style="display: none;"></div>
+
+        <div class="modal-buttons">
+          <button class="btn-secondary" id="btn-cancel-add">取消</button>
+          <button class="btn-primary" id="btn-save-add">加密并保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 全局 Toast 提示 -->
+    <div id="toast" class="popup-toast" style="display: none;"></div>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

@@ -29,7 +29,7 @@ export async function createDatabase(dbName = "2fas.db"): Promise<Kysely<Databas
     const expoDb = await SQLite.openDatabaseAsync(dbName);
     dbInstance = new Kysely<Database>({
       dialect: new ExpoDialect({
-        database: expoDb,
+        database: expoDb as any,
       }),
     });
   }

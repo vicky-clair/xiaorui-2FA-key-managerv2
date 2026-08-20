@@ -36,11 +36,14 @@ export function uint8ArrayToBase32(bytes: Uint8Array): string {
  * 自动忽略空格、连字符并容错转换大小写
  */
 export function base32ToUint8Array(input: string): Uint8Array {
-  // 过滤用户粘贴时常见的空格和破折号
-  const sanitized = input.toUpperCase().replace(/[\s\-=]/g, "");
+  // 过滤用户粘贴时常见的空格、破折号、等号填充以及不可见控制字符
+  let sanitized = input.toUpperCase().replace(/[\s\-=_\r\n\t]/g, "");
   if (!sanitized) {
     return new Uint8Array(0);
   }
+
+  // 常见手误/编码字符智能容错修复 (0 -> O, 1 -> I, 8 -> B)
+  sanitized = sanitized.replace(/0/g, "O").replace(/1/g, "I").replace(/8/g, "B");
 
   let bits = 0;
   let value = 0;

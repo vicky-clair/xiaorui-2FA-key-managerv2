@@ -4,11 +4,13 @@ import { Colors } from "@/constants/theme";
 
 export type ColorSchemeType = "dark" | "light";
 
+export type ThemeColors = typeof Colors.light | typeof Colors.dark;
+
 interface ThemePreferenceContextType {
   colorScheme: ColorSchemeType;
   toggleColorScheme: () => void;
   setColorScheme: (scheme: ColorSchemeType) => void;
-  colors: typeof Colors.dark;
+  colors: ThemeColors;
   isDark: boolean;
 }
 

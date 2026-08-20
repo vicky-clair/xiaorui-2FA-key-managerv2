@@ -1,4 +1,4 @@
-import { Buffer } from "node:buffer";
+import { Buffer } from "buffer";
 import crypto from "react-native-quick-crypto";
 
 const ALGORITHM = "aes-256-gcm";
@@ -23,10 +23,10 @@ export async function encryptAES256GCM(plaintext: string, key: Uint8Array | Buff
   }
 
   const nonce = crypto.randomBytes(IV_LENGTH);
-  const cipher = crypto.createCipheriv(ALGORITHM, key, nonce);
+  const cipher = crypto.createCipheriv(ALGORITHM, key as any, nonce as any);
 
-  let ciphertext = cipher.update(plaintext, "utf8");
-  ciphertext = Buffer.concat([ciphertext, cipher.final()]);
+  let ciphertext: any = cipher.update(plaintext, "utf8");
+  ciphertext = Buffer.concat([ciphertext, cipher.final() as any]);
 
   const authTag = cipher.getAuthTag();
 
@@ -52,10 +52,10 @@ export async function decryptAES256GCM(data: EncryptedData, key: Uint8Array | Bu
   const authTag = Buffer.from(data.authTag, "base64");
   const ciphertext = Buffer.from(data.ciphertext, "base64");
 
-  const decipher = crypto.createDecipheriv(ALGORITHM, key, nonce);
-  decipher.setAuthTag(authTag);
+  const decipher = crypto.createDecipheriv(ALGORITHM, key as any, nonce as any);
+  decipher.setAuthTag(authTag as any);
 
-  let plaintext = decipher.update(ciphertext, "base64", "utf8") as unknown as string;
+  let plaintext = decipher.update(ciphertext as any, "base64", "utf8") as unknown as string;
   plaintext += decipher.final("utf8") as unknown as string;
 
   return plaintext;
@@ -65,6 +65,6 @@ export async function decryptAES256GCM(data: EncryptedData, key: Uint8Array | Bu
  * Generates a strong random key of the specified byte length
  * @param length Defaults to 32 bytes (256 bits)
  */
-export function generateRandomKey(length = 32): Buffer {
-  return crypto.randomBytes(length);
+export function generateRandomKey(length = 32): Uint8Array {
+  return crypto.randomBytes(length) as any;
 }

@@ -25,7 +25,7 @@ export interface EncryptedData {
 async function importKey(key: Uint8Array): Promise<CryptoKey> {
   return await globalThis.crypto.subtle.importKey(
     "raw",
-    key,
+    key as any as BufferSource,
     { name: ALGORITHM },
     false,
     ["encrypt", "decrypt"]
@@ -51,11 +51,11 @@ export async function encryptAES256GCM(plaintext: string, key: Uint8Array): Prom
   const ciphertextWithTagBuffer = await globalThis.crypto.subtle.encrypt(
     {
       name: ALGORITHM,
-      iv: nonce,
+      iv: nonce as any as BufferSource,
       tagLength: AUTH_TAG_LENGTH * 8, // 128 位认证标签
     },
     cryptoKey,
-    encodedPlaintext
+    encodedPlaintext as any as BufferSource
   );
 
   const ciphertextWithTag = new Uint8Array(ciphertextWithTagBuffer);
@@ -95,11 +95,11 @@ export async function decryptAES256GCM(data: EncryptedData, key: Uint8Array): Pr
   const decryptedBuffer = await globalThis.crypto.subtle.decrypt(
     {
       name: ALGORITHM,
-      iv: nonce,
+      iv: nonce as any as BufferSource,
       tagLength: AUTH_TAG_LENGTH * 8,
     },
     cryptoKey,
-    ciphertextWithTag
+    ciphertextWithTag as any as BufferSource
   );
 
   return new TextDecoder().decode(decryptedBuffer);

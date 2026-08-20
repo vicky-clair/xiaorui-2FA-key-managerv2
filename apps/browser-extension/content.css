@@ -1,0 +1,314 @@
+/* 🛡️ Secure Authenticator - 页面悬浮识别浮窗与导入弹窗样式 */
+
+/* 悬浮提示浮窗容器 (固定在网页右上角) */
+.sa-toast-container {
+  position: fixed !important;
+  top: 24px !important;
+  right: 24px !important;
+  z-index: 2147483647 !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+  animation: sa-slide-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+}
+
+@keyframes sa-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.sa-fade-out {
+  opacity: 0 !important;
+  transform: translateY(-15px) scale(0.95) !important;
+  transition: all 0.35s ease !important;
+}
+
+/* 悬浮卡片主体 */
+.sa-toast-card {
+  width: 330px !important;
+  background: rgba(15, 23, 42, 0.95) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(59, 130, 246, 0.4) !important;
+  border-radius: 16px !important;
+  padding: 16px !important;
+  box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.6), 0 0 25px rgba(37, 99, 235, 0.25) !important;
+  color: #f8fafc !important;
+  box-sizing: border-box !important;
+}
+
+.sa-toast-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  margin-bottom: 12px !important;
+}
+
+.sa-toast-badge {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.sa-shield-icon {
+  font-size: 18px !important;
+}
+
+.sa-toast-title {
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  color: #60a5fa !important;
+  letter-spacing: 0.2px !important;
+}
+
+.sa-toast-close {
+  background: transparent !important;
+  border: none !important;
+  color: #94a3b8 !important;
+  font-size: 16px !important;
+  cursor: pointer !important;
+  padding: 4px 8px !important;
+  border-radius: 6px !important;
+  transition: all 0.2s !important;
+}
+
+.sa-toast-close:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+}
+
+.sa-toast-body {
+  margin-bottom: 14px !important;
+}
+
+.sa-toast-desc {
+  font-size: 12px !important;
+  color: #cbd5e1 !important;
+  margin-bottom: 8px !important;
+}
+
+.sa-toast-info {
+  background: rgba(30, 41, 59, 0.8) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 10px !important;
+  padding: 10px 12px !important;
+}
+
+.sa-info-row {
+  display: flex !important;
+  justify-content: space-between !important;
+  font-size: 12.5px !important;
+  line-height: 1.6 !important;
+}
+
+.sa-label {
+  color: #94a3b8 !important;
+}
+
+.sa-val {
+  color: #f1f5f9 !important;
+  font-weight: 600 !important;
+  max-width: 170px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.sa-highlight {
+  color: #38bdf8 !important;
+}
+
+.sa-toast-actions {
+  display: flex !important;
+  gap: 8px !important;
+}
+
+.sa-btn-primary {
+  flex: 1 !important;
+  height: 38px !important;
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+  color: #ffffff !important;
+  border: none !important;
+  border-radius: 10px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.35) !important;
+  transition: all 0.2s !important;
+}
+
+.sa-btn-primary:hover {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%) !important;
+  transform: translateY(-1px) !important;
+}
+
+.sa-btn-secondary {
+  height: 38px !important;
+  padding: 0 16px !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #cbd5e1 !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 10px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: all 0.2s !important;
+}
+
+.sa-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.14) !important;
+  color: #ffffff !important;
+}
+
+/* 模态弹窗遮罩与对话框 */
+.sa-modal-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(0, 0, 0, 0.75) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  z-index: 2147483647 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+  animation: sa-fade-in 0.2s ease forwards !important;
+}
+
+@keyframes sa-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.sa-modal-dialog {
+  width: 440px !important;
+  max-width: 90vw !important;
+  background: #0f172a !important;
+  border: 1px solid rgba(59, 130, 246, 0.35) !important;
+  border-radius: 18px !important;
+  padding: 24px !important;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8) !important;
+  color: #f8fafc !important;
+  box-sizing: border-box !important;
+}
+
+.sa-modal-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  margin-bottom: 20px !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  padding-bottom: 14px !important;
+}
+
+.sa-modal-title {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  color: #60a5fa !important;
+}
+
+.sa-modal-close {
+  background: transparent !important;
+  border: none !important;
+  color: #94a3b8 !important;
+  font-size: 18px !important;
+  cursor: pointer !important;
+  padding: 4px 8px !important;
+}
+
+.sa-modal-content {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 16px !important;
+}
+
+.sa-form-group {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+}
+
+.sa-form-label {
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: #cbd5e1 !important;
+}
+
+.sa-form-input {
+  height: 42px !important;
+  background: #1e293b !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 10px !important;
+  padding: 0 14px !important;
+  color: #ffffff !important;
+  font-size: 14px !important;
+  outline: none !important;
+  box-sizing: border-box !important;
+  transition: all 0.2s !important;
+}
+
+.sa-form-input:focus {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25) !important;
+}
+
+.sa-secret-preview {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  background: #1e293b !important;
+  border: 1px dashed rgba(59, 130, 246, 0.4) !important;
+  border-radius: 10px !important;
+  padding: 10px 14px !important;
+  font-family: monospace !important;
+  font-size: 13px !important;
+  color: #94a3b8 !important;
+}
+
+.sa-badge-algo {
+  background: rgba(37, 99, 235, 0.2) !important;
+  color: #60a5fa !important;
+  border: 1px solid rgba(59, 130, 246, 0.3) !important;
+  border-radius: 6px !important;
+  padding: 2px 8px !important;
+  font-size: 11px !important;
+}
+
+.sa-modal-status {
+  padding: 10px 14px !important;
+  border-radius: 10px !important;
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+}
+
+.sa-status-error {
+  background: rgba(239, 68, 68, 0.15) !important;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+  color: #fca5a5 !important;
+}
+
+.sa-status-success {
+  background: rgba(16, 185, 129, 0.15) !important;
+  border: 1px solid rgba(16, 185, 129, 0.3) !important;
+  color: #6ee7b7 !important;
+}
+
+.sa-modal-footer {
+  display: flex !important;
+  justify-content: flex-end !important;
+  gap: 10px !important;
+  margin-top: 20px !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+  padding-top: 16px !important;
+}

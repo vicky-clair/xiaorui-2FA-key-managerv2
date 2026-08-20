@@ -59,7 +59,7 @@ interface DisplayEntry {
 }
 
 // Curated modern color palettes for service avatar badges
-const SERVICE_GRADIENTS = [
+const SERVICE_GRADIENTS: [string, string][] = [
   ["#3b82f6", "#1d4ed8"], // Sapphire Blue
   ["#10b981", "#047857"], // Emerald Green
   ["#8b5cf6", "#6d28d9"], // Royal Purple
@@ -279,6 +279,52 @@ export default function HomeScreen() {
     };
   }, [appState, vaultKey, autoLockMinutes]);
 
+  const pendingDeepLinkUriRef = useRef<string | null>(null);
+
+  const triggerImportFromUri = (rawUri: string) => {
+    try {
+      let target = rawUri.trim();
+      if (target.includes("?uri=")) {
+        const idx = target.indexOf("?uri=");
+        target = decodeURIComponent(target.substring(idx + 5));
+      }
+      if (target.startsWith("otpauth%3A%2F%2F") || target.startsWith("otpauth%3a%2f%2f")) {
+        target = decodeURIComponent(target);
+      }
+      if (target.toLowerCase().startsWith("otpauth://")) {
+        const parsed = parseOtpAuthUri(target);
+        setSecretOrUri(parsed.secret);
+        setAccountName(parsed.account || parsed.issuer || "");
+      } else {
+        setSecretOrUri(target);
+      }
+      setAddModalError(null);
+      setShowAddModal(true);
+    } catch {
+      setSecretOrUri(rawUri);
+      setAddModalError(null);
+      setShowAddModal(true);
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const handleUri = (uri: string) => {
+        if (appState === "dashboard" && vaultKey) {
+          triggerImportFromUri(uri);
+        } else {
+          pendingDeepLinkUriRef.current = uri;
+        }
+      };
+
+      (window as any).__onDeepLink = handleUri;
+      if ((window as any).__pendingDeepLinkUri) {
+        handleUri((window as any).__pendingDeepLinkUri);
+        (window as any).__pendingDeepLinkUri = null;
+      }
+    }
+  }, [appState, vaultKey]);
+
   useEffect(() => {
     if (isInitialized) {
       loadVaults();
@@ -431,6 +477,12 @@ export default function HomeScreen() {
       const allVaults = await repo.getAllVaults();
       setVaults(allVaults);
       await loadEntries(newVault.id, derivedKey);
+
+      if (pendingDeepLinkUriRef.current) {
+        const pUri = pendingDeepLinkUriRef.current;
+        pendingDeepLinkUriRef.current = null;
+        setTimeout(() => triggerImportFromUri(pUri), 150);
+      }
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Failed to create vault");
     } finally {
@@ -463,6 +515,12 @@ export default function HomeScreen() {
         setFormError(null);
         setAppState("dashboard");
         await loadEntries(targetVault.id, key);
+
+        if (pendingDeepLinkUriRef.current) {
+          const pUri = pendingDeepLinkUriRef.current;
+          pendingDeepLinkUriRef.current = null;
+          setTimeout(() => triggerImportFromUri(pUri), 150);
+        }
       } else {
         setFormError(t("invalidPassword"));
       }
@@ -505,22 +563,30 @@ export default function HomeScreen() {
       return;
     }
 
-    const input = secretOrUri.trim();
-    if (!input) {
+    let rawInput = secretOrUri.trim();
+    if (!rawInput) {
       setAddModalError("请粘贴 2FA 密钥代码或链接");
       return;
     }
 
-    let finalSecret = input;
+    if (rawInput.includes("?uri=")) {
+      const idx = rawInput.indexOf("?uri=");
+      rawInput = decodeURIComponent(rawInput.substring(idx + 5));
+    }
+    if (rawInput.startsWith("otpauth%3A%2F%2F") || rawInput.startsWith("otpauth%3a%2f%2f")) {
+      rawInput = decodeURIComponent(rawInput);
+    }
+
+    let finalSecret = rawInput;
     let finalIssuer = accountName.trim();
     let finalAccount = "";
     let finalAlgorithm: OTPAlgorithm = "SHA1";
     let finalPeriod = 30;
     let finalDigits = 6;
 
-    if (input.toLowerCase().startsWith("otpauth://")) {
+    if (rawInput.toLowerCase().startsWith("otpauth://")) {
       try {
-        const parsed = parseOtpAuthUri(input);
+        const parsed = parseOtpAuthUri(rawInput);
         finalSecret = parsed.secret;
         if (!finalIssuer) finalIssuer = parsed.issuer;
         finalAccount = parsed.account;
@@ -531,11 +597,16 @@ export default function HomeScreen() {
         setAddModalError(err instanceof Error ? err.message : "无效的 otpauth 链接");
         return;
       }
-    } else {
-      finalSecret = input.replace(/[\s\-]/g, "").toUpperCase();
-      if (!finalIssuer) {
-        finalIssuer = "2FA Account";
+    } else if (rawInput.includes("secret=")) {
+      const match = rawInput.match(/secret=([A-Za-z0-9\-_=]+)/i);
+      if (match) {
+        finalSecret = match[1];
       }
+    }
+
+    finalSecret = finalSecret.replace(/[\s\-=_]/g, "").toUpperCase();
+    if (!finalIssuer) {
+      finalIssuer = "2FA Account";
     }
 
     try {
@@ -944,6 +1015,12 @@ export default function HomeScreen() {
       borderColor: theme.cardBorder,
       borderRadius: 16,
     },
+    noticeCard: {
+      backgroundColor: isDark ? "rgba(30, 41, 59, 0.7)" : "rgba(241, 245, 249, 0.85)",
+      borderColor: isDark ? "rgba(59, 130, 246, 0.25)" : "rgba(37, 99, 235, 0.18)",
+      borderWidth: 1,
+      borderRadius: 14,
+    },
   });
 
   // 1. Loading Screen
@@ -965,69 +1042,110 @@ export default function HomeScreen() {
     return (
       <View style={[dynamicStyles.containerBg, styles.authWrapper]}>
         <SafeAreaView style={styles.authSafeArea}>
-          <View style={styles.brandingHeader}>
-            <View style={styles.shieldEmblem}>
-              <ThemedText style={{ fontSize: 40 }}>🛡️</ThemedText>
-            </View>
-            <ThemedText type="title" style={styles.authTitle}>
-              {t("setupVault")}
-            </ThemedText>
-            <ThemedText style={[styles.authSubtitle, { color: theme.textSecondary }]}>
-              {t("setupInstructions")}
-            </ThemedText>
-          </View>
-
-          <View style={[dynamicStyles.cardSurface, styles.card]}>
-            <TextInput
-              style={dynamicStyles.input}
-              placeholder={t("masterPassword")}
-              placeholderTextColor={theme.textDisabled}
-              value={password}
-              onChangeText={(val) => {
-                setPassword(val);
-                if (formError) setFormError(null);
-              }}
-              secureTextEntry
-              returnKeyType="next"
-              autoFocus
-            />
-
-            <TextInput
-              style={dynamicStyles.input}
-              placeholder={t("confirmPassword")}
-              placeholderTextColor={theme.textDisabled}
-              value={confirmPassword}
-              onChangeText={(val) => {
-                setConfirmPassword(val);
-                if (formError) setFormError(null);
-              }}
-              secureTextEntry
-              returnKeyType="done"
-              onSubmitEditing={handleSetupVault}
-            />
-
-            {formError && (
-              <View style={styles.errorBox}>
-                <ThemedText style={styles.errorText}>⚠️ {formError}</ThemedText>
+          <ScrollView
+            contentContainerStyle={styles.authScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.brandingHeader}>
+              <View style={styles.shieldEmblem}>
+                <ThemedText style={{ fontSize: 40 }}>🛡️</ThemedText>
               </View>
-            )}
+              <ThemedText type="title" style={styles.authTitle}>
+                {t("setupVault")}
+              </ThemedText>
+              <ThemedText style={[styles.authSubtitle, { color: theme.textSecondary }]}>
+                {t("setupInstructions")}
+              </ThemedText>
+            </View>
 
-            <Pressable
-              style={({ pressed }) => [
-                dynamicStyles.primaryButton,
-                pressed && { opacity: 0.8 },
-                loading && { opacity: 0.6 },
-              ]}
-              onPress={handleSetupVault}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#ffffff" />
-              ) : (
-                <ThemedText style={styles.primaryButtonText}>{t("createVault")}</ThemedText>
+            <View style={[dynamicStyles.cardSurface, styles.card]}>
+              <TextInput
+                style={dynamicStyles.input}
+                placeholder={t("masterPassword")}
+                placeholderTextColor={theme.textDisabled}
+                value={password}
+                onChangeText={(val) => {
+                  setPassword(val);
+                  if (formError) setFormError(null);
+                }}
+                secureTextEntry
+                returnKeyType="next"
+                autoFocus
+              />
+
+              <TextInput
+                style={dynamicStyles.input}
+                placeholder={t("confirmPassword")}
+                placeholderTextColor={theme.textDisabled}
+                value={confirmPassword}
+                onChangeText={(val) => {
+                  setConfirmPassword(val);
+                  if (formError) setFormError(null);
+                }}
+                secureTextEntry
+                returnKeyType="done"
+                onSubmitEditing={handleSetupVault}
+              />
+
+              {formError && (
+                <View style={styles.errorBox}>
+                  <ThemedText style={styles.errorText}>⚠️ {formError}</ThemedText>
+                </View>
               )}
-            </Pressable>
-          </View>
+
+              <Pressable
+                style={({ pressed }) => [
+                  dynamicStyles.primaryButton,
+                  pressed && { opacity: 0.8 },
+                  loading && { opacity: 0.6 },
+                ]}
+                onPress={handleSetupVault}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <ThemedText style={styles.primaryButtonText}>{t("createVault")}</ThemedText>
+                )}
+              </Pressable>
+            </View>
+
+            {/* 重要安全说明与备份须知 */}
+            <View style={[dynamicStyles.noticeCard, styles.noticeCard]}>
+              <View style={styles.noticeHeader}>
+                <ThemedText style={{ fontSize: 15 }}>🛡️</ThemedText>
+                <ThemedText style={[styles.noticeTitle, { color: isDark ? "#60a5fa" : "#2563eb" }]}>
+                  {t("authNoticeTitle")}
+                </ThemedText>
+              </View>
+              <View style={styles.noticeList}>
+                <View style={styles.noticeItem}>
+                  <ThemedText style={{ fontSize: 12.5, lineHeight: 18, color: theme.textSecondary }}>
+                    <ThemedText style={{ fontWeight: "700", color: isDark ? "#93c5fd" : "#1d4ed8" }}>
+                      🔒 {t("noticeLocalTitle")}
+                    </ThemedText>
+                    {t("noticeLocalDesc")}
+                  </ThemedText>
+                </View>
+                <View style={styles.noticeItem}>
+                  <ThemedText style={{ fontSize: 12.5, lineHeight: 18, color: theme.textSecondary }}>
+                    <ThemedText style={{ fontWeight: "700", color: isDark ? "#fca5a5" : "#dc2626" }}>
+                      ⚠️ {t("noticePasswordTitle")}
+                    </ThemedText>
+                    {t("noticePasswordDesc")}
+                  </ThemedText>
+                </View>
+                <View style={styles.noticeItem}>
+                  <ThemedText style={{ fontSize: 12.5, lineHeight: 18, color: theme.textSecondary }}>
+                    <ThemedText style={{ fontWeight: "700", color: isDark ? "#fcd34d" : "#d97706" }}>
+                      📦 {t("noticeBackupTitle")}
+                    </ThemedText>
+                    {t("noticeBackupDesc")}
+                  </ThemedText>
+                </View>
+              </View>
+            </View>
+          </ScrollView>
         </SafeAreaView>
       </View>
     );
@@ -1038,66 +1156,99 @@ export default function HomeScreen() {
     return (
       <View style={[dynamicStyles.containerBg, styles.authWrapper]}>
         <SafeAreaView style={styles.authSafeArea}>
-          <View style={styles.brandingHeader}>
-            <View style={styles.shieldEmblem}>
-              <ThemedText style={{ fontSize: 40 }}>🔐</ThemedText>
-            </View>
-            <ThemedText type="title" style={styles.authTitle}>
-              {t("unlockVault")}
-            </ThemedText>
-            <ThemedText style={[styles.authSubtitle, { color: theme.textSecondary }]}>
-              {t("unlockInstructions")}
-            </ThemedText>
-          </View>
-
-          <View style={[dynamicStyles.cardSurface, styles.card]}>
-            <TextInput
-              style={dynamicStyles.input}
-              placeholder={t("enterPassword")}
-              placeholderTextColor={theme.textDisabled}
-              value={password}
-              onChangeText={(val) => {
-                setPassword(val);
-                if (formError) setFormError(null);
-              }}
-              secureTextEntry
-              returnKeyType="done"
-              onSubmitEditing={handleUnlockVault}
-              autoFocus
-            />
-
-            {formError && (
-              <View style={styles.errorBox}>
-                <ThemedText style={styles.errorText}>⚠️ {formError}</ThemedText>
+          <ScrollView
+            contentContainerStyle={styles.authScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.brandingHeader}>
+              <View style={styles.shieldEmblem}>
+                <ThemedText style={{ fontSize: 40 }}>🔐</ThemedText>
               </View>
-            )}
-
-            <Pressable
-              style={({ pressed }) => [
-                dynamicStyles.primaryButton,
-                pressed && { opacity: 0.8 },
-                loading && { opacity: 0.6 },
-              ]}
-              onPress={handleUnlockVault}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#ffffff" />
-              ) : (
-                <ThemedText style={styles.primaryButtonText}>{t("unlock")}</ThemedText>
-              )}
-            </Pressable>
-
-            {/* Quick theme toggle on unlock screen */}
-            <Pressable
-              style={[dynamicStyles.headerBtnPill, { alignSelf: "center", marginTop: Spacing.two }]}
-              onPress={toggleColorScheme}
-            >
-              <ThemedText style={{ fontSize: 13, color: theme.textSecondary }}>
-                {isDark ? "☀️ " + t("themeLight") : "🌙 " + t("themeDark")}
+              <ThemedText type="title" style={styles.authTitle}>
+                {t("unlockVault")}
               </ThemedText>
-            </Pressable>
-          </View>
+              <ThemedText style={[styles.authSubtitle, { color: theme.textSecondary }]}>
+                {t("unlockInstructions")}
+              </ThemedText>
+            </View>
+
+            <View style={[dynamicStyles.cardSurface, styles.card]}>
+              <TextInput
+                style={dynamicStyles.input}
+                placeholder={t("enterPassword")}
+                placeholderTextColor={theme.textDisabled}
+                value={password}
+                onChangeText={(val) => {
+                  setPassword(val);
+                  if (formError) setFormError(null);
+                }}
+                secureTextEntry
+                returnKeyType="done"
+                onSubmitEditing={handleUnlockVault}
+                autoFocus
+              />
+
+              {formError && (
+                <View style={styles.errorBox}>
+                  <ThemedText style={styles.errorText}>⚠️ {formError}</ThemedText>
+                </View>
+              )}
+
+              <Pressable
+                style={({ pressed }) => [
+                  dynamicStyles.primaryButton,
+                  pressed && { opacity: 0.8 },
+                  loading && { opacity: 0.6 },
+                ]}
+                onPress={handleUnlockVault}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <ThemedText style={styles.primaryButtonText}>{t("unlock")}</ThemedText>
+                )}
+              </Pressable>
+
+              {/* Quick theme toggle on unlock screen */}
+              <Pressable
+                style={[dynamicStyles.headerBtnPill, { alignSelf: "center", marginTop: Spacing.two }]}
+                onPress={toggleColorScheme}
+              >
+                <ThemedText style={{ fontSize: 13, color: theme.textSecondary }}>
+                  {isDark ? "☀️ " + t("themeLight") : "🌙 " + t("themeDark")}
+                </ThemedText>
+              </Pressable>
+            </View>
+
+            {/* 重要说明与安全提示 */}
+            <View style={[dynamicStyles.noticeCard, styles.noticeCard]}>
+              <View style={styles.noticeHeader}>
+                <ThemedText style={{ fontSize: 15 }}>🛡️</ThemedText>
+                <ThemedText style={[styles.noticeTitle, { color: isDark ? "#60a5fa" : "#2563eb" }]}>
+                  {t("unlockNoticeTitle")}
+                </ThemedText>
+              </View>
+              <View style={styles.noticeList}>
+                <View style={styles.noticeItem}>
+                  <ThemedText style={{ fontSize: 12.5, lineHeight: 18, color: theme.textSecondary }}>
+                    <ThemedText style={{ fontWeight: "700", color: isDark ? "#93c5fd" : "#1d4ed8" }}>
+                      🔒 {t("noticeLocalTitle")}
+                    </ThemedText>
+                    {t("noticeLocalDesc")}
+                  </ThemedText>
+                </View>
+                <View style={styles.noticeItem}>
+                  <ThemedText style={{ fontSize: 12.5, lineHeight: 18, color: theme.textSecondary }}>
+                    <ThemedText style={{ fontWeight: "700", color: isDark ? "#fcd34d" : "#d97706" }}>
+                      📦 {t("noticeBackupTitle")}
+                    </ThemedText>
+                    {t("unlockBackupDesc")}
+                  </ThemedText>
+                </View>
+              </View>
+            </View>
+          </ScrollView>
         </SafeAreaView>
       </View>
     );
@@ -1193,7 +1344,7 @@ export default function HomeScreen() {
                 resetInactivityTimer();
                 setShowAutoLockModal(true);
               }}
-              title={t("autoLock")}
+              accessibilityLabel={t("autoLock")}
             >
               <ThemedText style={{ fontSize: 12 }}>⏱️</ThemedText>
               {!isUltraCompact && (
@@ -1210,7 +1361,7 @@ export default function HomeScreen() {
                 pressed && { opacity: 0.7 },
               ]}
               onPress={toggleColorScheme}
-              title={isDark ? t("themeLight") : t("themeDark")}
+              accessibilityLabel={isDark ? t("themeLight") : t("themeDark")}
             >
               <ThemedText style={{ fontSize: 13 }}>{isDark ? "☀️" : "🌙"}</ThemedText>
             </Pressable>
@@ -1222,7 +1373,7 @@ export default function HomeScreen() {
                 pressed && { opacity: 0.8 },
               ]}
               onPress={handleLockVault}
-              title={t("lockVault")}
+              accessibilityLabel={t("lockVault")}
             >
               <ThemedText style={{ fontSize: 12, fontWeight: "700", color: theme.danger }}>
                 🔒 {!isUltraCompact && t("lockVault")}
@@ -1414,7 +1565,7 @@ export default function HomeScreen() {
                           pressed && { opacity: 0.6 },
                         ]}
                         onPress={() => handleDeleteEntry(item.id)}
-                        title={t("delete")}
+                        accessibilityLabel={t("delete")}
                       >
                         <ThemedText style={{ color: theme.textDisabled, fontSize: 13, fontWeight: "700" }}>✕</ThemedText>
                       </Pressable>
@@ -2132,6 +2283,7 @@ const styles = StyleSheet.create({
     padding: Spacing.four,
   },
   authWrapper: {
+    flex: 1,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: Spacing.four,
@@ -2139,7 +2291,10 @@ const styles = StyleSheet.create({
   authSafeArea: {
     maxWidth: 460,
     width: "100%",
-    gap: Spacing.four,
+  },
+  authScrollContent: {
+    paddingVertical: Spacing.four,
+    gap: Spacing.three,
   },
   brandingHeader: {
     alignItems: "center",
@@ -2173,6 +2328,29 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.15,
     shadowRadius: 16,
+  },
+  noticeCard: {
+    padding: Spacing.three,
+    gap: 8,
+  },
+  noticeHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingBottom: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(128, 128, 128, 0.2)",
+  },
+  noticeTitle: {
+    fontSize: 13.5,
+    fontWeight: "700",
+  },
+  noticeList: {
+    gap: 8,
+  },
+  noticeItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
   },
   primaryButtonText: {
     color: "#ffffff",

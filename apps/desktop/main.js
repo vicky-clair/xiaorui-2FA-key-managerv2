@@ -113,6 +113,98 @@ function startServer(callback) {
   });
 }
 
+let mainWindow = null;
+let serverPort = null;
+let pendingDeepLinkUri = null;
+
+// 注册 secureauth:// 自定义系统协议，支持浏览器插件直接唤起
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient('secureauth', process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient('secureauth');
+}
+
+/**
+ * 提取命令行或参数中的深层链接 URI
+ */
+function extractDeepLinkFromArgs(argv) {
+  for (const arg of argv) {
+    if (arg && (arg.startsWith('secureauth://') || arg.startsWith('otpauth://'))) {
+      return arg;
+    }
+  }
+  return null;
+}
+
+// 检查启动参数中是否包含深层链接
+const initialLink = extractDeepLinkFromArgs(process.argv);
+if (initialLink) {
+  pendingDeepLinkUri = initialLink;
+}
+
+// 单实例锁控制：当外部通过浏览器唤起时，不重复打开新窗口，而是将现有窗口激活并传递 2FA 数据
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (event, commandLine, workingDirectory) => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+
+      const deepLink = extractDeepLinkFromArgs(commandLine);
+      if (deepLink) {
+        dispatchDeepLinkToRenderer(mainWindow, deepLink);
+      }
+    }
+  });
+
+  // 应用程序准备就绪后启动本地服务并打开主窗口
+  app.whenReady().then(() => {
+    startServer((port) => {
+      serverPort = port;
+      mainWindow = createWindow(port);
+
+      app.on('activate', () => {
+        if (BrowserWindow.getAllWindows().length === 0) {
+          mainWindow = createWindow(serverPort);
+        }
+      });
+    });
+  });
+}
+
+// macOS 专属 open-url 事件处理
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    dispatchDeepLinkToRenderer(mainWindow, url);
+  } else {
+    pendingDeepLinkUri = url;
+  }
+});
+
+/**
+ * 向渲染进程派发深层链接 2FA 导入数据
+ */
+function dispatchDeepLinkToRenderer(win, uri) {
+  if (!win || !win.webContents) return;
+  const script = `
+    if (window.__onDeepLink) {
+      window.__onDeepLink(${JSON.stringify(uri)});
+    } else {
+      window.__pendingDeepLinkUri = ${JSON.stringify(uri)};
+    }
+  `;
+  win.webContents.executeJavaScript(script).catch(() => {});
+}
+
 /**
  * 创建主应用程序窗口
  */
@@ -133,20 +225,16 @@ function createWindow(port) {
   });
 
   win.loadURL(`http://127.0.0.1:${port}`);
-}
 
-// 应用程序准备就绪后启动本地服务并打开主窗口
-app.whenReady().then(() => {
-  startServer((port) => {
-    createWindow(port);
-
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        createWindow(port);
-      }
-    });
+  win.webContents.on('did-finish-load', () => {
+    if (pendingDeepLinkUri) {
+      dispatchDeepLinkToRenderer(win, pendingDeepLinkUri);
+      pendingDeepLinkUri = null;
+    }
   });
-});
+
+  return win;
+}
 
 // 所有窗口关闭时退出应用 (macOS 除外)
 app.on('window-all-closed', () => {

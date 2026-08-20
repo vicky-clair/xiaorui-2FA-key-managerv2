@@ -32,6 +32,8 @@ export interface AuthenticatorEntry {
   authTag: string; // Base64
 }
 
+export type EntryMetadata = AuthenticatorEntry;
+
 /**
  * The database record for a Vault, containing only KDF and encryption parameters.
  * Master Password -> Argon2id(salt, KDF params) -> KEK

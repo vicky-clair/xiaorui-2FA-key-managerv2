@@ -15,6 +15,9 @@
 5. [商业化会员与离线授权体系](#5-商业化会员与离线授权体系)
 6. [跨平台构建与 Electron 单文件 EXE 打包](#6-跨平台构建与-electron-单文件-exe-打包)
 7. [常见易出现问题与踩坑解决方案 (Troubleshooting)](#7-常见易出现问题与踩坑解决方案-troubleshooting)
+8. [本地数据存储位置与彻底销毁机制 (Data Storage & Destruction)](#8-本地数据存储位置与彻底销毁机制-data-storage--destruction)
+9. [防数据丢失与安全灾备指引 (Data Loss Prevention)](#9-防数据丢失与安全灾备指引-data-loss-prevention)
+10. [未来演进路线 (Roadmap)](#10-未来演进路线-roadmap)
 
 ---
 
@@ -219,3 +222,75 @@ bun run build:exe
   - **行 1：** 系统状态栏（Logo + VIP 徽章 + 账号数 + 👑会员 + ⏱️自动锁 + 🌓主题 + 🔒锁定）
   - **行 2：** 业务操作栏（弹性搜索框 + ➕添加 2FA + 📥导入备份 + 📦导出备份）
   结合 CSS Flex `flex-wrap: wrap` 与弹性权重（`flex: 1`），在大屏自适应铺满、在小屏自动流式排列，实现极致视觉与交互体验。
+
+---
+
+## 8. 本地数据存储位置与彻底销毁机制 (Data Storage & Destruction)
+
+### 8.1 本地存储位置全景图
+
+| 平台 | 存储介质 | 物理保存绝对路径 |
+| :--- | :--- | :--- |
+| **Windows 桌面端 (Electron)** | SQLite / IndexedDB 隔离沙箱 | `%APPDATA%\Secure Authenticator\Partitions\xiaorui_vault\` (即 `C:\Users\<用户名>\AppData\Roaming\Secure Authenticator\`) |
+| **Android 客户端** | SQLite 独立应用私有沙箱 | `/data/user/0/com.xiaorui.secureauthenticator/databases/2fas.db` |
+| **iOS 客户端** | SQLite 应用沙盒 Documents | `~/Library/Application Support/2fas.db` (受 iOS 沙盒保护) |
+| **Web 网页版** | 浏览器 IndexedDB / OPFS | 浏览器内部沙盒存储 (`2fas.db` 实体表) |
+
+### 8.2 数据删除与物理销毁原理
+
+本应用严格遵循 **Zero-Cloud（零云端）** 与 **Zero-Knowledge（零知识）** 原则：
+
+1. **零服务器参与**：
+   - 本项目完全不依赖任何远程数据库、遥测日志或云同步服务器。
+   - 所有数据仅保存在用户当前的物理终端设备上。
+2. **删除即物理销毁**：
+   - **单条记录删除**：在 UI 界面点击账号卡片右上角的 `✕` 按钮，将直接执行 SQL `DELETE FROM authenticator_entries WHERE id = ?`，磁盘密文记录立即被物理移除。
+   - **全量重置与彻底销毁**：在 Windows 资源管理器中直接删除 `%APPDATA%\Secure Authenticator` 文件夹，即可彻底销毁所有本地密文数据、Salt 盐值与主密码派生信息。
+   - **不可逆性**：由于没有云端同步与回收站机制，一旦本地文件被删除或覆盖，在没有提前导出 `.sav` 备份的情况下，**任何人（包括开发者）在数学和物理上均无法恢复**。
+
+---
+
+## 9. 防数据丢失与安全灾备指引 (Data Loss Prevention)
+
+为了防止用户因电脑故障、系统重装、磁盘损坏或忘记主密码而造成 2FA 动态口令永久丢失，开发团队制定了以下防灾减灾策略：
+
+### 9.1 UI 层强化提示与安全教育
+- **初次设置主密码界面 (`appState === "setup"`)**：
+  - 新增醒目的 **🛡️ 重要安全说明** 卡片。
+  - 明确提示：数据仅在本地使用 Argon2id + AES-256-GCM 强加密；主密码不被保存、无法找回；必须在添加账号后及时导出备份。
+- **解锁界面 (`appState === "unlock"`)**：
+  - 增加 **安全与数据提示** 卡片，持续提醒用户定期导出最新备份。
+
+### 9.2 推荐备份最佳实践（3-2-1 灾备原则）
+1. **定期导出 `.sav` 备份**：
+   - 每当新增或修改 2FA 账号后，在顶部工具栏点击 `📦 导出备份`。
+   - 系统将所有账号与元数据整体使用 **AES-256-GCM** 和用户设置的独立备份密码重新加密打包，生成单文件 `.sav`。
+2. **多介质异地存储**：
+   - 将 `.sav` 文件复制到安全的离线存储介质（如加密 U 盘、移动硬盘或家庭 NAS）。
+3. **备份密码与主密码分离**：
+   - 建议备份密码与日常解锁的主密码有所区别，并以纸质手抄或安全密码库妥善保存。
+
+---
+
+## 10. 浏览器扩展端架构与 2FA 专属识别 (Browser Extension)
+
+### 10.1 核心工作流程
+- **Manifest V3 架构**：位于 `apps/browser-extension`，由 `background.js` (Service Worker)、`content.js` (页面扫描注入) 与 `popup/` (扩展弹窗) 组成。
+- **智能 2FA 二维码扫描**：
+  - 调用浏览器原生 `BarcodeDetector` API 持续检测网页中的图片与 Canvas 元素；
+  - **严格白名单过滤**：严格仅对 `otpauth://totp/` 或 `otpauth://hotp/` 开头的 2FA 绑定二维码响应，自动静默忽略所有普通网址、支付码与文本二维码；
+  - **页面悬浮提醒与备注确认**：识别后弹出高质感玻璃拟态卡片，点击「📥 立即导入」支持用户自定义核对/修改账号备注（文件名），确认无误后以 AES-256-GCM 强加密保存至本地。
+- **编译与打包命令**：
+  ```bash
+  bun run build:extension
+  ```
+  生成完整的解压即用扩展包于 `apps/browser-extension/` 目录。在 Chrome / Edge 打开 `chrome://extensions`，开启开发者模式并点击「加载已解压的扩展程序」选择该目录即可。
+
+---
+
+## 11. 未来演进路线 (Roadmap)
+
+- [x] **v1.0.0 (当前版本)**：核心 Argon2id + AES-256-GCM、双行式自适应 UI、单文件绿色便携 EXE 打包、19 项自动化测试覆盖、中英双语国际化与安全教育提示卡。
+- [x] **v1.1.0 (浏览器扩展端)**：Chrome / Edge (Manifest V3) 扩展上线，支持网页 2FA 专属二维码识别、悬浮提示导入、动态修改备注名与一键复制。
+- [ ] **v1.2.0**：集成 Windows Hello 原生生物识别（指纹/人脸）快速解锁（基于 WinRT / DPAPI 硬件密钥存储）。
+- [ ] **v2.0.0**：多设备局域网 P2P 端到端加密扫码安全同步（基于 WebRTC / Noise Protocol，杜绝中心服务器）。
