@@ -7,7 +7,8 @@
     "start": "electron .",
     "prebuild": "bun --cwd ../expo run expo export --platform web",
     "build": "electron-builder build --win --dir",
-    "build:exe": "electron-builder build --win nsis portable"
+    "build:exe": "electron-builder build --win nsis portable",
+    "build:msix": "electron-builder build --win msix"
   },
   "build": {
     "appId": "com.xiaorui.secureauthenticator",
@@ -29,7 +30,8 @@
     "win": {
       "target": [
         "nsis",
-        "portable"
+        "portable",
+        "msix"
       ]
     },
     "nsis": {
