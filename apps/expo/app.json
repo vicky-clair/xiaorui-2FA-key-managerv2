@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "temp-expo",
-    "slug": "temp-expo",
+    "name": "Xiaorui 2FA Security Vault",
+    "slug": "xiaorui-2fa-security-vault",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "tempexpo",
+    "scheme": "secureauth",
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon"

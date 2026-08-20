@@ -1,4 +1,4 @@
-# 🛡️ Secure Authenticator (2FA 密钥管理器) — 开发与技术架构文档
+# 🛡️ Xiaorui 2FA Security Vault (2FA 密钥管理器) — 开发与技术架构文档
 
 > **版本：** v1.0.0  
 > **更新时间：** 2026-08-19  
@@ -23,7 +23,7 @@
 
 ## 1. 项目概述与设计哲学
 
-**Secure Authenticator** 是一款企业级高安全性、本地优先（Local-First）的双重认证（2FA/TOTP/HOTP）管理工具。
+**Xiaorui 2FA Security Vault** 是一款企业级高安全性、本地优先（Local-First）的双重认证（2FA/TOTP/HOTP）管理工具。
 
 ### 核心设计原则：
 1. **零知识架构（Zero-Knowledge）：** 服务端与本地磁盘均不掌握用户主密码或明文密钥。所有 2FA 密钥、账户备注与元数据在落盘（SQLite）前均经 AES-256-GCM 强加密。
@@ -124,7 +124,7 @@ sequenceDiagram
 
 ### 6.1 打包机制解析
 1. **第一步（Web 编译）：** `bun --cwd apps/expo expo export --platform web`，将 React Native Web 编译为纯静态高优化 SPA 包于 `apps/expo/dist`。
-2. **第二步（资源装载与 Electron 封装）：** `electron-builder` 将静态包与 `main.js`、`elevate.exe`、`winCodeSign` 打包为免安装单文件 `apps/desktop/release/Secure Authenticator 1.0.0.exe`。
+2. **第二步（资源装载与 Electron 封装）：** `electron-builder` 将静态包与 `main.js`、`elevate.exe`、`winCodeSign` 打包为免安装单文件 `apps/desktop/release/Xiaorui 2FA Security Vault 1.0.0.exe`。
 3. **第三步（生产运行）：** 内嵌的微型 HTTP 服务自动绑定 `127.0.0.1:38291`，注入 `COOP: same-origin` / `COEP: require-corp` 安全响应头，使得 WebAssembly 多线程与 SharedArrayBuffer 在客户端顺畅运行。
 
 ### 6.2 常用开发与构建命令
@@ -231,7 +231,7 @@ bun run build:exe
 
 | 平台 | 存储介质 | 物理保存绝对路径 |
 | :--- | :--- | :--- |
-| **Windows 桌面端 (Electron)** | SQLite / IndexedDB 隔离沙箱 | `%APPDATA%\Secure Authenticator\Partitions\xiaorui_vault\` (即 `C:\Users\<用户名>\AppData\Roaming\Secure Authenticator\`) |
+| **Windows 桌面端 (Electron)** | SQLite / IndexedDB 隔离沙箱 | `%APPDATA%\Xiaorui 2FA Security Vault\Partitions\xiaorui_vault\` (即 `C:\Users\<用户名>\AppData\Roaming\Xiaorui 2FA Security Vault\`) |
 | **Android 客户端** | SQLite 独立应用私有沙箱 | `/data/user/0/com.xiaorui.secureauthenticator/databases/2fas.db` |
 | **iOS 客户端** | SQLite 应用沙盒 Documents | `~/Library/Application Support/2fas.db` (受 iOS 沙盒保护) |
 | **Web 网页版** | 浏览器 IndexedDB / OPFS | 浏览器内部沙盒存储 (`2fas.db` 实体表) |
@@ -245,7 +245,7 @@ bun run build:exe
    - 所有数据仅保存在用户当前的物理终端设备上。
 2. **删除即物理销毁**：
    - **单条记录删除**：在 UI 界面点击账号卡片右上角的 `✕` 按钮，将直接执行 SQL `DELETE FROM authenticator_entries WHERE id = ?`，磁盘密文记录立即被物理移除。
-   - **全量重置与彻底销毁**：在 Windows 资源管理器中直接删除 `%APPDATA%\Secure Authenticator` 文件夹，即可彻底销毁所有本地密文数据、Salt 盐值与主密码派生信息。
+   - **全量重置与彻底销毁**：在 Windows 资源管理器中直接删除 `%APPDATA%\Xiaorui 2FA Security Vault` 文件夹，即可彻底销毁所有本地密文数据、Salt 盐值与主密码派生信息。
    - **不可逆性**：由于没有云端同步与回收站机制，一旦本地文件被删除或覆盖，在没有提前导出 `.sav` 备份的情况下，**任何人（包括开发者）在数学和物理上均无法恢复**。
 
 ---
@@ -272,25 +272,71 @@ bun run build:exe
 
 ---
 
-## 10. 浏览器扩展端架构与 2FA 专属识别 (Browser Extension)
+## 10. 浏览器扩展端架构与跨端深度联动 (Browser Extension & Deep Linking)
 
-### 10.1 核心工作流程
-- **Manifest V3 架构**：位于 `apps/browser-extension`，由 `background.js` (Service Worker)、`content.js` (页面扫描注入) 与 `popup/` (扩展弹窗) 组成。
-- **智能 2FA 二维码扫描**：
-  - 调用浏览器原生 `BarcodeDetector` API 持续检测网页中的图片与 Canvas 元素；
-  - **严格白名单过滤**：严格仅对 `otpauth://totp/` 或 `otpauth://hotp/` 开头的 2FA 绑定二维码响应，自动静默忽略所有普通网址、支付码与文本二维码；
-  - **页面悬浮提醒与备注确认**：识别后弹出高质感玻璃拟态卡片，点击「📥 立即导入」支持用户自定义核对/修改账号备注（文件名），确认无误后以 AES-256-GCM 强加密保存至本地。
-- **编译与打包命令**：
-  ```bash
-  bun run build:extension
-  ```
-  生成完整的解压即用扩展包于 `apps/browser-extension/` 目录。在 Chrome / Edge 打开 `chrome://extensions`，开启开发者模式并点击「加载已解压的扩展程序」选择该目录即可。
+### 10.1 核心工作流程与架构设计
+
+浏览器插件位于 [`apps/browser-extension`](file:///c:/XMWJJ/xiaorui-2FA-key-managerv2/apps/browser-extension)，全面兼容 Chrome、Edge 与 Mozilla Firefox（Manifest V3 双规范）：
+
+```mermaid
+sequenceDiagram
+    participant Web as 目标网页 (如 GitHub / Google)
+    participant CS as Content Script (内容脚本)
+    participant BG as Background Service Worker
+    participant Desk as Xiaorui 2FA Security Vault 桌面端
+    
+    Web->>CS: 页面渲染 2FA 二维码 (img / canvas / svg / iframe)
+    CS->>CS: jsQR + BarcodeDetector 多引擎解码
+    Note over CS: 遇跨域图片限制时调用 BG 代理抓取 Base64
+    CS->>CS: 严格过滤仅识别 otpauth://(totp|hotp) 协议
+    CS->>Web: 网页右上角平滑滑出悬浮提示卡片
+    Web->>CS: 用户点击「🚀 确认并拉起软件」
+    CS->>Desk: 发送系统协议 secureauth://import?uri=...
+    Desk->>Desk: Electron 单实例捕获并置顶窗口
+    Desk->>Desk: 自动弹出「➕ 添加 2FA」并填好参数，聚焦文件名输入
+```
+
+### 10.2 突破浏览器跨域 Canvas 限制 (CORS Tainted Canvas Bypass)
+- **挑战：** 许多网站的 2FA 二维码托管于第三方图床或 CDN，直接 `canvas.toDataURL()` 或 `ctx.getImageData()` 会触发浏览器安全策略 `SecurityError: The canvas has been tainted by cross-origin data`。
+- **解决方案：** 实现**三级穿透抓取通道**：
+  1. 尝试本地 Canvas 抓取；
+  2. 失败时尝试前端 `fetch(img.src).then(r => r.blob())` 转换；
+  3. 仍失败时由 Content Script 发送消息交由拥有 `<all_urls>` 权限的 Background Script 代理下载，转为 Base64 后回传前端进行 `jsQR` 离线解码。
+
+### 10.3 系统级深层链接协议 (`secureauth://`)
+- **Electron 协议注册**：在 [`apps/desktop/main.js`](file:///c:/XMWJJ/xiaorui-2FA-key-managerv2/apps/desktop/main.js) 中注册 `app.setAsDefaultProtocolClient('secureauth')`；
+- **单实例进程锁**：`app.requestSingleInstanceLock()` 拦截二次唤醒，通过 `second-instance` 事件将 `argv` 派发至渲染窗口 `window.__onDeepLink`；
+- **锁定状态无缝衔接**：在 [`apps/expo/src/app/index.tsx`](file:///c:/XMWJJ/xiaorui-2FA-key-managerv2/apps/expo/src/app/index.tsx) 中实现 `pendingDeepLinkUriRef`。若软件处于锁定状态，用户解锁主密码后系统自动弹出添加界面，极大提升用户体验。
 
 ---
 
-## 11. 未来演进路线 (Roadmap)
+## 11. 常见易出现问题与踩坑排查实录 (Troubleshooting & FAQs)
 
-- [x] **v1.0.0 (当前版本)**：核心 Argon2id + AES-256-GCM、双行式自适应 UI、单文件绿色便携 EXE 打包、19 项自动化测试覆盖、中英双语国际化与安全教育提示卡。
-- [x] **v1.1.0 (浏览器扩展端)**：Chrome / Edge (Manifest V3) 扩展上线，支持网页 2FA 专属二维码识别、悬浮提示导入、动态修改备注名与一键复制。
+### 🚨 踩坑 7：URL 解析器提取非标准协议 host 为空 (`不支持的 2FA 类型: `)
+- **现象描述：**
+  在部分 JS/Expo Web 环境下调用 `new URL("otpauth://totp/...")` 时，`url.host` 返回空字符串 `""`，导致抛出 `不支持的 2FA 类型: ，仅支持 totp 或 hotp` 异常。
+- **解决方案：**
+  重构 [`packages/core/src/crypto/totp.ts`](file:///c:/XMWJJ/xiaorui-2FA-key-managerv2/packages/core/src/crypto/totp.ts) 中的 `parseOtpAuthUri`，改用稳健正则表达式 `/^otpauth:\/+(totp|hotp)(\/[^?]+)?(\?.*)?$/i` 提取类型与路径参数，彻底摆脱对 `url.host` 的脆弱依赖。
+
+### 🚨 踩坑 8：URL 编码、嵌套深层链接与 Base32 容错导致 `密钥格式无效`
+- **现象描述：**
+  当通过 `secureauth://import?uri=...` 拉起或复制了 URL 编码的字符串（如 `otpauth%3A%2F%2F`）或包含混淆字符（`0`, `1`, `8`）时，Base32 校验失败。
+- **解决方案：**
+  1. 递归提取并 `decodeURIComponent` 解包；
+  2. 在 [`packages/core/src/crypto/base32.ts`](file:///c:/XMWJJ/xiaorui-2FA-key-managerv2/packages/core/src/crypto/base32.ts) 中自动过滤所有空格、连字符、下划线与 `=` 填充，并自动对易混淆字符（`0` $\rightarrow$ `O`，`1` $\rightarrow$ `I`，`8` $\rightarrow$ `B`）进行智能容错纠正。
+
+### 🚨 踩坑 9：Windows 打包时 EXE 文件被占用锁定
+- **现象描述：**
+  运行 `bun run build:exe` 时报错 `output file is locked for writing (maybe by virus scanner)`。
+- **解决方案：**
+  打包前自动检测并关闭正在运行的开发实例：`taskkill /IM "Xiaorui 2FA Security Vault.exe" /F`。
+
+---
+
+## 12. 未来演进路线 (Roadmap)
+
+- [x] **v1.0.0 (核心发布)**：Argon2id + AES-256-GCM 零知识双层信封加密、两行式响应式 UI、单文件绿色便携 EXE 打包、19 项全量单元测试覆盖。
+- [x] **v1.1.0 (浏览器扩展与跨端联动)**：Chrome / Edge / Firefox (Manifest V3) 扩展上线，实现网页 2FA 专属二维码识别、跨域 Canvas 穿透、`secureauth://` 系统协议一键直接拉起桌面端软件与锁定后自动衔接。
 - [ ] **v1.2.0**：集成 Windows Hello 原生生物识别（指纹/人脸）快速解锁（基于 WinRT / DPAPI 硬件密钥存储）。
 - [ ] **v2.0.0**：多设备局域网 P2P 端到端加密扫码安全同步（基于 WebRTC / Noise Protocol，杜绝中心服务器）。
+

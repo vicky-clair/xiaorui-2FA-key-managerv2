@@ -19,11 +19,11 @@
 ## 💾 数据存储与物理销毁 (Data Storage & Destruction)
 
 - **本地存储位置**：
-  - Windows: `%APPDATA%\Secure Authenticator\Partitions\xiaorui_vault\`
+  - Windows: `%APPDATA%\Xiaorui 2FA Security Vault\Partitions\xiaorui_vault\`
   - 数据文件包括本地 SQLite 加密数据库及用户偏好配置。
 - **物理销毁原则**：
   - 本应用没有任何云端数据库或同步服务器，所有信息仅保存在本地设备。
-  - 删除 `%APPDATA%\Secure Authenticator` 目录即彻底物理抹除所有本地密文，**数据彻底销毁且无法逆向找回**。
+  - 删除 `%APPDATA%\Xiaorui 2FA Security Vault` 目录即彻底物理抹除所有本地密文，**数据彻底销毁且无法逆向找回**。
 
 ---
 

@@ -1,6 +1,6 @@
 {
   "setupVault": "Create Master Vault",
-  "setupInstructions": "Welcome to Secure Authenticator. Set a strong master password. All keys are encrypted end-to-end with Argon2id and AES-256-GCM locally.",
+  "setupInstructions": "Welcome to Xiaorui 2FA Security Vault. Set a strong master password. All keys are encrypted end-to-end with Argon2id and AES-256-GCM locally.",
   "masterPassword": "Master Password",
   "confirmPassword": "Confirm Master Password",
   "passwordsDoNotMatch": "Passwords do not match",
@@ -9,8 +9,8 @@
   "unlockInstructions": "Enter your master password to decrypt and access your 2FA tokens.",
   "unlock": "Unlock Vault",
   "invalidPassword": "Incorrect password. Please try again.",
-  "vaultManager": "Secure Authenticator",
-  "setupFirstVault": "Welcome to Secure Authenticator. Please set up your first vault.",
+  "vaultManager": "Xiaorui 2FA Security Vault",
+  "setupFirstVault": "Welcome to Xiaorui 2FA Security Vault. Please set up your first vault.",
   "enterPassword": "Enter Master Password",
   "lockVault": "Lock",
   "error": "Error",

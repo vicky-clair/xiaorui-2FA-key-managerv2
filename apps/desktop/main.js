@@ -214,7 +214,7 @@ function createWindow(port) {
     height: 760,
     minWidth: 420,
     minHeight: 520,
-    title: 'Secure Authenticator 2FA',
+    title: 'Xiaorui 2FA Security Vault',
     backgroundColor: '#090d16',
     autoHideMenuBar: true,
     webPreferences: {

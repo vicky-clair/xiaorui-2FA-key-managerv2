@@ -28,7 +28,7 @@ async function decryptData(ciphertextHex, ivHex, key) {
 // apps/browser-extension/src/background.ts
 var sessionKey = null;
 chrome.runtime.onInstalled.addListener(() => {
-  console.log("\uD83D\uDEE1️ Secure Authenticator Extension installed.");
+  console.log("\uD83D\uDEE1️ Xiaorui 2FA Security Vault Extension installed.");
   try {
     chrome.contextMenus.create({
       id: "sa-scan-2fa",

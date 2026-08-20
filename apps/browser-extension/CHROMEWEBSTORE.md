@@ -1,8 +1,8 @@
 # Chrome Web Store & Edge Add-ons 发布清单 (CHROMEWEBSTORE.md)
 
 ## 📌 扩展基本信息
-- **扩展名称**：Secure Authenticator 2FA
-- **短名称**：Secure2FA
+- **扩展名称**：Xiaorui 2FA Security Vault
+- **短名称**：Xiaorui2FA
 - **版本号**：1.0.0
 - **默认语言**：中文 (简体) / en (English)
 - **类别**：生产力工具 / 安全与隐私 (Productivity / Privacy & Security)
@@ -12,7 +12,7 @@
 ## 📝 详细功能介绍 (Store Listing Description)
 
 ### 简体中文：
-> **Secure Authenticator** 是一款纯本地、零知识端到端加密的双重认证（2FA / TOTP）管理插件。
+> **Xiaorui 2FA Security Vault** 是一款纯本地、零知识端到端加密的双重认证（2FA / TOTP）管理插件。
 >
 > **✨ 核心特性**：
 > 1. **智能 2FA 二维码扫描与识别**：当网页中出现 2FA 绑定二维码时，插件自动识别并弹出优雅的导入提示，无需手动输入繁琐的长串密钥代码。

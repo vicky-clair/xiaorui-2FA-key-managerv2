@@ -1,7 +1,7 @@
 {
   "name": "@sa/desktop",
   "version": "1.0.0",
-  "description": "Secure Authenticator 2FA Desktop App",
+  "description": "Xiaorui 2FA Security Vault Desktop App",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -11,7 +11,7 @@
   },
   "build": {
     "appId": "com.xiaorui.secureauthenticator",
-    "productName": "Secure Authenticator",
+    "productName": "Xiaorui 2FA Security Vault",
     "directories": {
       "output": "release"
     },
@@ -37,7 +37,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Secure Authenticator"
+      "shortcutName": "Xiaorui 2FA Security Vault"
     }
   },
   "devDependencies": {

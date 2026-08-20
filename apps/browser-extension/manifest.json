@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Secure Authenticator 2FA",
+  "name": "Xiaorui 2FA Security Vault",
   "version": "1.0.0",
   "description": "本地零知识 2FA 动态口令管理器，支持网页 2FA 绑定二维码智能识别与安全导入。",
   "icons": {
@@ -15,10 +15,9 @@
       "48": "icons/icon-48.png",
       "128": "icons/icon-128.png"
     },
-    "default_title": "Secure Authenticator"
+    "default_title": "Xiaorui 2FA Security Vault"
   },
   "background": {
-    "scripts": ["background.js"],
     "service_worker": "background.js"
   },
   "permissions": [

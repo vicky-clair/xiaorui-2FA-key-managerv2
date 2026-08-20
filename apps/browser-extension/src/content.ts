@@ -14,7 +14,7 @@ import { parseOtpAuthUri, is2FaOtpAuthUri, ParsedOtpAuth } from "./crypto";
 
 declare const chrome: any;
 
-console.log("🛡️ [Secure Authenticator] 2FA 实时二维码扫描监听引擎已在当前网页就绪。");
+console.log("🛡️ [Xiaorui 2FA Security Vault] 2FA 实时二维码扫描监听引擎已在当前网页就绪。");
 
 // 记录已检测并提示过的 2FA 密钥，防止重复弹窗打扰
 const notifiedSecrets = new Set<string>();
@@ -201,7 +201,7 @@ async function scanElementFor2Fa(element: HTMLElement | SVGElement): Promise<voi
       }
 
       const parsed = parseOtpAuthUri(cleanUri);
-      console.log("🛡️ [Secure Authenticator] 成功识别 2FA 二维码:", parsed.issuer, parsed.account);
+      console.log("🛡️ [Xiaorui 2FA Security Vault] 成功识别 2FA 二维码:", parsed.issuer, parsed.account);
 
       if (notifiedSecrets.has(parsed.secret)) {
         return; // 已经提示过该密钥，不重复打扰
@@ -260,7 +260,7 @@ function showInPage2FaPrompt(data: ParsedOtpAuth) {
       <div class="sa-toast-header">
         <div class="sa-toast-badge">
           <span class="sa-shield-icon">🛡️</span>
-          <span class="sa-toast-title">Secure Authenticator</span>
+          <span class="sa-toast-title">Xiaorui 2FA Security Vault</span>
         </div>
         <button class="sa-toast-close" id="sa-toast-close-btn" title="忽略">✕</button>
       </div>
@@ -370,7 +370,7 @@ setInterval(() => {
 // 4. 监听来自 Background 的右键菜单扫描触发
 chrome.runtime.onMessage?.addListener((msg: any, sender: any, sendResponse: any) => {
   if (msg.type === "TRIGGER_MANUAL_SCAN") {
-    console.log("🛡️ [Secure Authenticator] 收到手动右键扫描指令，正在全面扫描页面图像...");
+    console.log("🛡️ [Xiaorui 2FA Security Vault] 收到手动右键扫描指令，正在全面扫描页面图像...");
     scanPageImages();
     sendResponse({ success: true });
   }

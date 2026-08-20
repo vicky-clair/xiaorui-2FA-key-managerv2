@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🛡️ Secure Authenticator (2FA Key Manager)
+# 🛡️ Xiaorui 2FA Security Vault (2FA Key Manager)
 
 **Next-Generation, Local-First, Zero-Knowledge 2FA/TOTP/HOTP Desktop & Mobile Key Manager**
 
@@ -101,7 +101,7 @@ bun run build:exe
 
 The output file will be generated at:
 ```
-apps/desktop/release/Secure Authenticator 1.0.0.exe
+apps/desktop/release/Xiaorui 2FA Security Vault 1.0.0.exe
 ```
 Simply double-click the `.exe` to run anywhere on Windows without installing any dependencies!
 

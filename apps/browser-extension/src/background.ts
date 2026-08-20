@@ -27,7 +27,7 @@ let sessionKey: CryptoKey | null = null;
 
 // 监听扩展安装与启动事件
 chrome.runtime.onInstalled.addListener(() => {
-  console.log("🛡️ Secure Authenticator Extension installed.");
+  console.log("🛡️ Xiaorui 2FA Security Vault Extension installed.");
   try {
     chrome.contextMenus.create({
       id: "sa-scan-2fa",

@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🛡️ Secure Authenticator (2FA 密钥管理器)
+# 🛡️ Xiaorui 2FA Security Vault (2FA 密钥管理器)
 
 **新一代本地优先、零知识端到端加密的跨平台 2FA / TOTP / HOTP 动态口令管理工具**
 
@@ -101,7 +101,7 @@ bun run build:exe
 
 生成的单文件程序位于：
 ```
-apps/desktop/release/Secure Authenticator 1.0.0.exe
+apps/desktop/release/Xiaorui 2FA Security Vault 1.0.0.exe
 ```
 无需安装任何环境，双击即可在任何 Windows 电脑上直接运行！
 
@@ -123,12 +123,12 @@ apps/desktop/release/Secure Authenticator 1.0.0.exe
 ## 🔒 安全与数据保护说明 (Security & Data Protection)
 
 ### 1. 本地存储位置
-- **Windows 桌面端**：`%APPDATA%\Secure Authenticator\Partitions\xiaorui_vault\` (即 `C:\Users\<用户名>\AppData\Roaming\Secure Authenticator\`)
+- **Windows 桌面端**：`%APPDATA%\Xiaorui 2FA Security Vault\Partitions\xiaorui_vault\` (即 `C:\Users\<用户名>\AppData\Roaming\Xiaorui 2FA Security Vault\`)
 - **数据文件**：包含经 `AES-256-GCM` 强加密的 SQLite 数据库与用户偏好设置。
 
 ### 2. 彻底销毁与重置原理 (Delete = Permanent Destruction)
 - **100% 纯本地离线（Zero Cloud）**：本项目没有任何远程云端服务器备份，所有密文仅保存在您的物理电脑上。
-- **物理删除即彻底销毁**：直接删除 `%APPDATA%\Secure Authenticator` 文件夹或在主界面删除账号卡片，磁盘密文直接被移除，无法通过任何云端或逆向手段找回。
+- **物理删除即彻底销毁**：直接删除 `%APPDATA%\Xiaorui 2FA Security Vault` 文件夹或在主界面删除账号卡片，磁盘密文直接被移除，无法通过任何云端或逆向手段找回。
 
 ### 3. 如何防止数据意外丢失 (Anti-Data-Loss Best Practices)
 - ⚠️ **主密码不可找回**：主密码采用 Argon2id 散列，未在任何地方明文存储。若遗忘主密码，没有任何人能解密数据。

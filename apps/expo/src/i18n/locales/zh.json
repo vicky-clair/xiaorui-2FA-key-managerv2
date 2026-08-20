@@ -1,6 +1,6 @@
 {
   "setupVault": "创建主保险库",
-  "setupInstructions": "欢迎使用 Secure Authenticator。请设置一个强主密码，本应用采用 Argon2id 与 AES-256-GCM 本地端到端加密保护您的所有 2FA 密钥。",
+  "setupInstructions": "欢迎使用 Xiaorui 2FA Security Vault。请设置一个强主密码，本应用采用 Argon2id 与 AES-256-GCM 本地端到端加密保护您的所有 2FA 密钥。",
   "masterPassword": "主密码 (Master Password)",
   "confirmPassword": "确认主密码",
   "passwordsDoNotMatch": "两次输入的密码不一致",
@@ -9,8 +9,8 @@
   "unlockInstructions": "请输入主密码以解密并查看您的动态验证码。",
   "unlock": "解锁保险库",
   "invalidPassword": "密码不正确，请重新输入",
-  "vaultManager": "Secure Authenticator",
-  "setupFirstVault": "欢迎使用 Secure Authenticator，请先设置您的主保险库。",
+  "vaultManager": "Xiaorui 2FA Security Vault",
+  "setupFirstVault": "欢迎使用 Xiaorui 2FA Security Vault，请先设置您的主保险库。",
   "enterPassword": "请输入主密码",
   "lockVault": "锁定",
   "error": "错误",

@@ -10057,7 +10057,7 @@ function is2FaOtpAuthUri(text) {
 }
 
 // apps/browser-extension/src/content.ts
-console.log("\uD83D\uDEE1️ [Secure Authenticator] 2FA 实时二维码扫描监听引擎已在当前网页就绪。");
+console.log("\uD83D\uDEE1️ [Xiaorui 2FA Security Vault] 2FA 实时二维码扫描监听引擎已在当前网页就绪。");
 var notifiedSecrets = new Set;
 var scannedElements = new WeakSet;
 var barcodeDetector = null;
@@ -10203,7 +10203,7 @@ async function scanElementFor2Fa(element) {
         return;
       }
       const parsed = parseOtpAuthUri(cleanUri);
-      console.log("\uD83D\uDEE1️ [Secure Authenticator] 成功识别 2FA 二维码:", parsed.issuer, parsed.account);
+      console.log("\uD83D\uDEE1️ [Xiaorui 2FA Security Vault] 成功识别 2FA 二维码:", parsed.issuer, parsed.account);
       if (notifiedSecrets.has(parsed.secret)) {
         return;
       }
@@ -10243,7 +10243,7 @@ function showInPage2FaPrompt(data) {
       <div class="sa-toast-header">
         <div class="sa-toast-badge">
           <span class="sa-shield-icon">\uD83D\uDEE1️</span>
-          <span class="sa-toast-title">Secure Authenticator</span>
+          <span class="sa-toast-title">Xiaorui 2FA Security Vault</span>
         </div>
         <button class="sa-toast-close" id="sa-toast-close-btn" title="忽略">✕</button>
       </div>
@@ -10327,7 +10327,7 @@ setInterval(() => {
 }, 2000);
 chrome.runtime.onMessage?.addListener((msg, sender, sendResponse) => {
   if (msg.type === "TRIGGER_MANUAL_SCAN") {
-    console.log("\uD83D\uDEE1️ [Secure Authenticator] 收到手动右键扫描指令，正在全面扫描页面图像...");
+    console.log("\uD83D\uDEE1️ [Xiaorui 2FA Security Vault] 收到手动右键扫描指令，正在全面扫描页面图像...");
     scanPageImages();
     sendResponse({ success: true });
   }
