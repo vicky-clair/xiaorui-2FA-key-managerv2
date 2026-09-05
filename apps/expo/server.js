@@ -74,7 +74,11 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (!fs.existsSync(filePath)) {
+  try {
+    if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+      filePath = path.join(DIST_DIR, "index.html");
+    }
+  } catch {
     filePath = path.join(DIST_DIR, "index.html");
   }
 

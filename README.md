@@ -131,6 +131,18 @@ apps/desktop/release/Xiaorui 2FA Security Vault 1.0.0.exe
 | **Dark / Light Modern Themes** | ✅ Supported | **✅ Supported** |
 | **Tricolor Dynamic Progress Indicator** | ✅ Supported | **✅ Supported** |
 
+### Test Activation
+
+During development and QA, use one of these temporary test codes in the PRO membership dialog:
+
+```text
+PRO-TEST-0000-0000
+VIP-TEST-0000-0000
+PREMIUM-LIFETIME-ACCESS
+```
+
+These codes are for local feature testing only. The current placeholder activation is not persisted as a trusted commercial entitlement. Production builds should use signed license payloads and restore PRO status only after signature verification.
+
 ---
 
 ## 🔒 Security Best Practices

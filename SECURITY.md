@@ -39,4 +39,5 @@
 ## 🧭 当前安全状态与后续工作
 
 - `bun audit` 当前仍会报告 `extract-zip <=2.0.1` 与 `image-size <=2.0.2` 的上游传递依赖漏洞。项目代码不直接处理任意用户上传的 zip、ICNS、JXL 或 HEIF 文件；后续应跟踪 Electron/Expo/React Native 上游修复。
-- `packages/core/src/services/EntitlementService.ts` 中的 PRO 激活逻辑仍是占位格式校验，不是不可伪造的许可证体系。正式商业化前必须改为服务端或离线工具私钥签发、客户端公钥验签。
+- `packages/core/src/services/EntitlementService.ts` 中的 PRO 激活逻辑仍是占位格式校验，不是不可伪造的许可证体系。`PRO-TEST-0000-0000`、`VIP-TEST-0000-0000`、`PREMIUM-LIFETIME-ACCESS` 只能用于本地功能测试。
+- 正式商业化前必须改为服务端或离线工具私钥签发、客户端公钥验签。正式激活可以持久化，但只能持久化签名 license blob 或可重新验签的授权状态，不能持久化未签名的裸激活码。

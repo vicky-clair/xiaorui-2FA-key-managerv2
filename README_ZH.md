@@ -131,6 +131,18 @@ apps/desktop/release/Xiaorui 2FA Security Vault 1.0.0.exe
 | **深色 / 浅色高质感主题切换** | ✅ 支持 | **✅ 支持** |
 | **三色平滑动态倒计时进度条** | ✅ 支持 | **✅ 支持** |
 
+### 测试激活说明
+
+开发与验收阶段可在「会员中心」输入以下临时测试码验证 PRO 功能：
+
+```text
+PRO-TEST-0000-0000
+VIP-TEST-0000-0000
+PREMIUM-LIFETIME-ACCESS
+```
+
+测试码仅用于本地功能验证，当前不会作为可信授权长期持久化。正式发布前应接入签名许可证体系，验签通过后再稳定恢复已激活状态。
+
 ---
 
 ## 🔒 安全与数据保护说明 (Security & Data Protection)

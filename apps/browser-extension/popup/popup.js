@@ -10090,6 +10090,23 @@ function parseOtpAuthUri(uri) {
     rawUri: cleanUri
   };
 }
+function is2FaOtpAuthUri(text) {
+  if (!text || typeof text !== "string")
+    return false;
+  try {
+    let clean = text.trim();
+    if (clean.includes("?uri=")) {
+      const idx = clean.indexOf("?uri=");
+      clean = decodeURIComponent(clean.substring(idx + 5));
+    }
+    if (clean.startsWith("otpauth%3A%2F%2F") || clean.startsWith("otpauth%3a%2f%2f")) {
+      clean = decodeURIComponent(clean);
+    }
+    return /^otpauth:\/+(totp|hotp)\//i.test(clean);
+  } catch {
+    return false;
+  }
+}
 async function generateTOTP(secretBase32, options) {
   const algorithm = options?.algorithm || "SHA-1";
   const digits = validateOtpDigits(options?.digits || 6);
@@ -10418,10 +10435,15 @@ inputQrFile?.addEventListener("change", async (e) => {
       const qr = import_jsqr.default(imgData.data, img.width, img.height);
       if (qr?.data) {
         let uri = qr.data.trim();
-        if (uri.startsWith("otpauth%3A%2F%2F") || uri.startsWith("otpauth%3a%2f%2f")) {
-          uri = decodeURIComponent(uri);
+        try {
+          if (uri.startsWith("otpauth%3A%2F%2F") || uri.startsWith("otpauth%3a%2f%2f")) {
+            uri = decodeURIComponent(uri);
+          }
+        } catch {
+          showToast("⚠️ 二维码中的 2FA 链接编码无效");
+          return;
         }
-        if (uri.startsWith("otpauth://")) {
+        if (is2FaOtpAuthUri(uri)) {
           const link = document.createElement("a");
           link.href = `secureauth://import?uri=${encodeURIComponent(uri)}`;
           document.body.appendChild(link);
@@ -10468,7 +10490,7 @@ document.getElementById("btn-save-add")?.addEventListener("click", () => {
   let finalAlgo = "SHA-1";
   let finalDigits = 6;
   let finalPeriod = 30;
-  if (inputSecret.toLowerCase().startsWith("otpauth://")) {
+  if (is2FaOtpAuthUri(inputSecret)) {
     try {
       const parsed = parseOtpAuthUri(inputSecret);
       finalSecret = parsed.secret;

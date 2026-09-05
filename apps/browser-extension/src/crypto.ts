@@ -234,15 +234,19 @@ export function parseOtpAuthUri(uri: string): ParsedOtpAuth {
 // 快速校验是否是合法的 2FA 二维码文本
 export function is2FaOtpAuthUri(text: string): boolean {
   if (!text || typeof text !== "string") return false;
-  let clean = text.trim();
-  if (clean.includes("?uri=")) {
-    const idx = clean.indexOf("?uri=");
-    clean = decodeURIComponent(clean.substring(idx + 5));
+  try {
+    let clean = text.trim();
+    if (clean.includes("?uri=")) {
+      const idx = clean.indexOf("?uri=");
+      clean = decodeURIComponent(clean.substring(idx + 5));
+    }
+    if (clean.startsWith("otpauth%3A%2F%2F") || clean.startsWith("otpauth%3a%2f%2f")) {
+      clean = decodeURIComponent(clean);
+    }
+    return /^otpauth:\/+(totp|hotp)\//i.test(clean);
+  } catch {
+    return false;
   }
-  if (clean.startsWith("otpauth%3A%2F%2F") || clean.startsWith("otpauth%3a%2f%2f")) {
-    clean = decodeURIComponent(clean);
-  }
-  return /^otpauth:\/+(totp|hotp)\//i.test(clean);
 }
 
 // RFC 6238 TOTP 动态码计算

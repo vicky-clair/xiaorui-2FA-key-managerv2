@@ -30,8 +30,9 @@ console.info("[Xiaorui 2FA Security Vault] 2FA scanner ready.");
 
 // 记录已检测并提示过的 2FA 密钥，防止重复弹窗打扰
 const notifiedSecrets = new Set<string>();
-// 记录已扫描过且未变更的元素
+// 记录已扫描过的元素与其图片源地址，避免重复扫描普通非 2FA 图片消耗 CPU
 const scannedElements = new WeakSet<HTMLElement | SVGElement>();
+const scannedImageSrc = new WeakMap<HTMLImageElement, string>();
 
 // 初始化 BarcodeDetector 原生二维码探测器（现代 Chrome / Edge 均原生支持）
 let barcodeDetector: BarcodeDetectorLike | null = null;
@@ -171,40 +172,57 @@ async function decodeQrCodeFromSource(
 /**
  * 扫描单个 DOM 元素（img, canvas, svg 等）
  */
-async function scanElementFor2Fa(element: HTMLElement | SVGElement): Promise<void> {
-  if (scannedElements.has(element)) return;
-
+async function scanElementFor2Fa(element: HTMLElement | SVGElement, force = false): Promise<void> {
   let rawValue: string | null = null;
 
   try {
     if (element instanceof HTMLImageElement) {
+      const currentSrc = element.currentSrc || element.src;
+      if (!force && scannedElements.has(element) && scannedImageSrc.get(element) === currentSrc) {
+        return;
+      }
       if (!element.complete || element.naturalWidth === 0) {
-        element.addEventListener("load", () => scanElementFor2Fa(element), { once: true });
+        element.addEventListener("load", () => scanElementFor2Fa(element, force), { once: true });
         return;
       }
       rawValue = await decodeQrCodeFromSource(element);
+      scannedElements.add(element);
+      if (currentSrc) {
+        scannedImageSrc.set(element, currentSrc);
+      }
     } else if (element instanceof HTMLCanvasElement) {
+      if (!force && scannedElements.has(element)) return;
       rawValue = await decodeQrCodeFromSource(element);
+      if (rawValue) {
+        scannedElements.add(element);
+      }
     } else if (element.tagName.toLowerCase() === "svg") {
+      if (!force && scannedElements.has(element)) return;
       // 对 SVG 进行光栅化转 Canvas 扫描
+      let url: string | null = null;
       try {
         const svgStr = new XMLSerializer().serializeToString(element);
         const img = new Image();
         const svgBlob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
-        const url = URL.createObjectURL(svgBlob);
+        url = URL.createObjectURL(svgBlob);
         img.src = url;
         await new Promise((res) => {
           img.onload = res;
           img.onerror = res;
         });
         rawValue = await decodeQrCodeFromSource(img);
-        URL.revokeObjectURL(url);
-      } catch {}
+      } catch {
+      } finally {
+        if (url) {
+          URL.revokeObjectURL(url);
+        }
+      }
+      if (rawValue) {
+        scannedElements.add(element);
+      }
     }
 
     if (rawValue) {
-      scannedElements.add(element);
-
       // 解码 URL 编码的 URI
       let cleanUri = rawValue.trim();
       if (cleanUri.startsWith("otpauth%3A%2F%2F") || cleanUri.startsWith("otpauth%3a%2f%2f")) {
@@ -246,22 +264,22 @@ async function scanElementFor2Fa(element: HTMLElement | SVGElement): Promise<voi
 /**
  * 全面扫描当前页面中的所有图像与画布
  */
-function scanPageImages() {
+function scanPageImages(force = false) {
   const images = document.querySelectorAll<HTMLImageElement>("img");
   for (const img of images) {
-    scanElementFor2Fa(img);
+    scanElementFor2Fa(img, force);
   }
 
   const canvases = document.querySelectorAll<HTMLCanvasElement>("canvas");
   for (const canvas of canvases) {
-    scanElementFor2Fa(canvas);
+    scanElementFor2Fa(canvas, force);
   }
 
   const svgs = document.querySelectorAll<SVGElement>("svg");
   for (const svg of svgs) {
     const rect = svg.getBoundingClientRect();
     if (rect.width >= 50 && rect.height >= 50 && rect.width <= 800) {
-      scanElementFor2Fa(svg);
+      scanElementFor2Fa(svg, force);
     }
   }
 }
@@ -396,7 +414,7 @@ chrome.runtime.onMessage?.addListener(
   ) => {
     if (msg.type === "TRIGGER_MANUAL_SCAN") {
       console.info("[Xiaorui 2FA Security Vault] Manual scan requested.");
-      scanPageImages();
+      scanPageImages(true);
       sendResponse({ success: true });
     }
   },

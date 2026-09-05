@@ -93,8 +93,12 @@ function startServer(callback) {
       return;
     }
 
-    // SPA 路由回退：针对 Expo Router 深度路径，统一重定向至 index.html
-    if (!fs.existsSync(filePath)) {
+    // SPA 路由回退：针对 Expo Router 深度路径或目录请求，统一重定向至 index.html
+    try {
+      if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+        filePath = path.join(distDir, "index.html");
+      }
+    } catch {
       filePath = path.join(distDir, "index.html");
     }
 

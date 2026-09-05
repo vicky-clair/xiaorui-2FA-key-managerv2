@@ -595,12 +595,17 @@ export default function HomeScreen() {
       return;
     }
 
-    if (rawInput.includes("?uri=")) {
-      const idx = rawInput.indexOf("?uri=");
-      rawInput = decodeURIComponent(rawInput.substring(idx + 5));
-    }
-    if (rawInput.startsWith("otpauth%3A%2F%2F") || rawInput.startsWith("otpauth%3a%2f%2f")) {
-      rawInput = decodeURIComponent(rawInput);
+    try {
+      if (rawInput.includes("?uri=")) {
+        const idx = rawInput.indexOf("?uri=");
+        rawInput = decodeURIComponent(rawInput.substring(idx + 5));
+      }
+      if (rawInput.startsWith("otpauth%3A%2F%2F") || rawInput.startsWith("otpauth%3a%2f%2f")) {
+        rawInput = decodeURIComponent(rawInput);
+      }
+    } catch {
+      setAddModalError("无效的 URL 编码，请检查 2FA 链接是否完整");
+      return;
     }
 
     let finalSecret = rawInput;
@@ -610,7 +615,10 @@ export default function HomeScreen() {
     let finalPeriod = 30;
     let finalDigits = 6;
 
-    if (rawInput.toLowerCase().startsWith("otpauth://")) {
+    if (
+      rawInput.toLowerCase().startsWith("otpauth://") ||
+      rawInput.toLowerCase().startsWith("otpauth:/")
+    ) {
       try {
         const parsed = parseOtpAuthUri(rawInput);
         finalSecret = parsed.secret;
@@ -623,8 +631,7 @@ export default function HomeScreen() {
         setAddModalError(err instanceof Error ? err.message : "无效的 otpauth 链接");
         return;
       }
-    }
-    if (rawInput.includes("secret=")) {
+    } else if (rawInput.includes("secret=")) {
       const match = rawInput.match(/secret=([A-Za-z0-9\-_=]+)/i);
       if (match) {
         finalSecret = match[1];
@@ -722,6 +729,11 @@ export default function HomeScreen() {
     const res = defaultEntitlementService.activateLicense(key);
     if (res.success) {
       setIsProUser(true);
+      try {
+        if (typeof window !== "undefined" && window.localStorage) {
+          window.localStorage.removeItem("sa_license_key");
+        }
+      } catch {}
       setProModalMsg({ type: "success", text: res.message });
       setTimeout(() => {
         setShowProModal(false);

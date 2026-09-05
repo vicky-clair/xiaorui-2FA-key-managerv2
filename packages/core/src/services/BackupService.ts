@@ -161,23 +161,30 @@ export async function restoreEncryptedBackup(
   // 1. 从备份文件元数据中提取盐值并派生解密密钥
   const backupKey = await deriveKey(backupPassword, parsed.kdf);
 
+  let decryptedJson: string;
   try {
     // 2. 解密并校验 AES-256-GCM 密文与认证标签
-    const decryptedJson = await decryptAES256GCM(parsed.encrypted, backupKey);
-    const payload: BackupPayload = JSON.parse(decryptedJson);
-
-    if (!Array.isArray(payload.entries)) {
-      throw new Error("备份数据异常：缺少有效 2FA 账号条目数组");
-    }
-    if (payload.entries.length > MAX_BACKUP_ENTRIES) {
-      throw new Error("备份数据异常：条目数量超出安全限制");
-    }
-
-    return payload;
+    decryptedJson = await decryptAES256GCM(parsed.encrypted, backupKey);
   } catch {
     throw new Error("备份解密失败：备份保护密码不正确或文件遭受篡改");
   } finally {
     // 内存安全清理
     wipeBytes(backupKey);
   }
+
+  let payload: BackupPayload;
+  try {
+    payload = JSON.parse(decryptedJson);
+  } catch {
+    throw new Error("备份数据异常：解密后内容非有效 JSON 格式");
+  }
+
+  if (!payload || !Array.isArray(payload.entries)) {
+    throw new Error("备份数据异常：缺少有效 2FA 账号条目数组");
+  }
+  if (payload.entries.length > MAX_BACKUP_ENTRIES) {
+    throw new Error("备份数据异常：条目数量超出安全限制");
+  }
+
+  return payload;
 }

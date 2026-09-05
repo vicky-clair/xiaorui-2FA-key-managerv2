@@ -337,14 +337,37 @@ bun audit
 
 `packages/core/src/services/EntitlementService.ts` 当前通过 `PRO-`、`VIP-` 或固定字符串识别 PRO。这不是强安全授权机制，只适合内测或占位。
 
+当前可用于功能测试的临时激活码：
+
+```text
+PRO-TEST-0000-0000
+VIP-TEST-0000-0000
+PREMIUM-LIFETIME-ACCESS
+```
+
+这些测试码的目的只是让开发者验证 PRO 功能入口，例如无限账号、备份导出和会员界面。当前实现不会把测试激活状态持久化为可信授权；关闭软件后重新打开，需要再次输入测试码。这是刻意设计，避免占位授权被误当作正式商业授权。
+
 正式商业化前必须改为签名许可证：
 
 - 客户端只内置公钥。
 - 服务端或离线发码工具用私钥签发 license。
-- license payload 至少包含 tier、expiresAt、deviceLimit、issuedAt、licenseId。
+- license payload 至少包含 `tier`、`expiresAt`、`deviceLimit`、`issuedAt`、`licenseId`。
 - 客户端验证签名、有效期和吊销策略。
+- 验签通过后只持久化签名后的 license blob 或其安全派生状态，不持久化裸激活码。
+- 正式激活状态应随应用重启稳定恢复，但任何本地持久化状态都必须能被公钥验签重新确认。
 
 在签名许可证完成前，不要在文档或商店材料中宣称“不可伪造离线授权”。
+
+建议的正式激活数据流：
+
+```text
+用户输入正式激活码
+  -> 解析 signed license payload
+  -> 使用客户端内置公钥验签
+  -> 校验 tier / expiresAt / issuedAt / licenseId
+  -> 持久化 signed license blob
+  -> 每次启动重新验签并恢复 PRO 状态
+```
 
 ---
 

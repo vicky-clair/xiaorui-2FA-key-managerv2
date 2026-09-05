@@ -24,10 +24,14 @@
 
 ### ✅ 验证 (Verification)
 - `bun run lint` 通过。
-- `bun test` 通过，19 项测试全绿。
+- `bun test` 通过，20 项测试全绿。
 - `bun run build:web` 通过。
 - `bun run package:extension-zip` 通过。
 - `bun run --cwd apps/desktop build:exe` 通过。
+
+### 📚 文档 (Documentation)
+- 补充临时 PRO 测试激活码说明，并明确其仅用于本地功能测试。
+- 补充正式商业授权的推荐实现：签名 license payload、公钥验签、持久化 signed license blob、启动时重新验签恢复激活状态。
 
 ---
 

@@ -1,5 +1,11 @@
 import jsQR from "jsqr";
-import { type ParsedOtpAuth, base32ToUint8Array, generateTOTP, parseOtpAuthUri } from "./crypto";
+import {
+  type ParsedOtpAuth,
+  base32ToUint8Array,
+  generateTOTP,
+  is2FaOtpAuthUri,
+  parseOtpAuthUri,
+} from "./crypto";
 
 declare const chrome: typeof globalThis.chrome;
 
@@ -385,10 +391,15 @@ inputQrFile?.addEventListener("change", async (e: Event) => {
       const qr = jsQR(imgData.data, img.width, img.height);
       if (qr?.data) {
         let uri = qr.data.trim();
-        if (uri.startsWith("otpauth%3A%2F%2F") || uri.startsWith("otpauth%3a%2f%2f")) {
-          uri = decodeURIComponent(uri);
+        try {
+          if (uri.startsWith("otpauth%3A%2F%2F") || uri.startsWith("otpauth%3a%2f%2f")) {
+            uri = decodeURIComponent(uri);
+          }
+        } catch {
+          showToast("⚠️ 二维码中的 2FA 链接编码无效");
+          return;
         }
-        if (uri.startsWith("otpauth://")) {
+        if (is2FaOtpAuthUri(uri)) {
           const link = document.createElement("a");
           link.href = `secureauth://import?uri=${encodeURIComponent(uri)}`;
           document.body.appendChild(link);
@@ -443,7 +454,7 @@ document.getElementById("btn-save-add")?.addEventListener("click", () => {
   let finalDigits = 6;
   let finalPeriod = 30;
 
-  if (inputSecret.toLowerCase().startsWith("otpauth://")) {
+  if (is2FaOtpAuthUri(inputSecret)) {
     try {
       const parsed = parseOtpAuthUri(inputSecret);
       finalSecret = parsed.secret;

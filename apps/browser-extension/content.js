@@ -10067,21 +10067,26 @@ function parseOtpAuthUri(uri) {
 function is2FaOtpAuthUri(text) {
   if (!text || typeof text !== "string")
     return false;
-  let clean = text.trim();
-  if (clean.includes("?uri=")) {
-    const idx = clean.indexOf("?uri=");
-    clean = decodeURIComponent(clean.substring(idx + 5));
+  try {
+    let clean = text.trim();
+    if (clean.includes("?uri=")) {
+      const idx = clean.indexOf("?uri=");
+      clean = decodeURIComponent(clean.substring(idx + 5));
+    }
+    if (clean.startsWith("otpauth%3A%2F%2F") || clean.startsWith("otpauth%3a%2f%2f")) {
+      clean = decodeURIComponent(clean);
+    }
+    return /^otpauth:\/+(totp|hotp)\//i.test(clean);
+  } catch {
+    return false;
   }
-  if (clean.startsWith("otpauth%3A%2F%2F") || clean.startsWith("otpauth%3a%2f%2f")) {
-    clean = decodeURIComponent(clean);
-  }
-  return /^otpauth:\/+(totp|hotp)\//i.test(clean);
 }
 
 // apps/browser-extension/src/content.ts
 console.info("[Xiaorui 2FA Security Vault] 2FA scanner ready.");
 var notifiedSecrets = new Set;
 var scannedElements = new WeakSet;
+var scannedImageSrc = new WeakMap;
 var barcodeDetector = null;
 var barcodeWindow = window;
 if (typeof barcodeWindow.BarcodeDetector !== "undefined") {
@@ -10188,36 +10193,55 @@ async function decodeQrCodeFromSource(source) {
   }
   return null;
 }
-async function scanElementFor2Fa(element) {
-  if (scannedElements.has(element))
-    return;
+async function scanElementFor2Fa(element, force = false) {
   let rawValue = null;
   try {
     if (element instanceof HTMLImageElement) {
+      const currentSrc = element.currentSrc || element.src;
+      if (!force && scannedElements.has(element) && scannedImageSrc.get(element) === currentSrc) {
+        return;
+      }
       if (!element.complete || element.naturalWidth === 0) {
-        element.addEventListener("load", () => scanElementFor2Fa(element), { once: true });
+        element.addEventListener("load", () => scanElementFor2Fa(element, force), { once: true });
         return;
       }
       rawValue = await decodeQrCodeFromSource(element);
+      scannedElements.add(element);
+      if (currentSrc) {
+        scannedImageSrc.set(element, currentSrc);
+      }
     } else if (element instanceof HTMLCanvasElement) {
+      if (!force && scannedElements.has(element))
+        return;
       rawValue = await decodeQrCodeFromSource(element);
+      if (rawValue) {
+        scannedElements.add(element);
+      }
     } else if (element.tagName.toLowerCase() === "svg") {
+      if (!force && scannedElements.has(element))
+        return;
+      let url = null;
       try {
         const svgStr = new XMLSerializer().serializeToString(element);
         const img = new Image;
         const svgBlob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
-        const url = URL.createObjectURL(svgBlob);
+        url = URL.createObjectURL(svgBlob);
         img.src = url;
         await new Promise((res) => {
           img.onload = res;
           img.onerror = res;
         });
         rawValue = await decodeQrCodeFromSource(img);
-        URL.revokeObjectURL(url);
-      } catch {}
+      } catch {} finally {
+        if (url) {
+          URL.revokeObjectURL(url);
+        }
+      }
+      if (rawValue) {
+        scannedElements.add(element);
+      }
     }
     if (rawValue) {
-      scannedElements.add(element);
       let cleanUri = rawValue.trim();
       if (cleanUri.startsWith("otpauth%3A%2F%2F") || cleanUri.startsWith("otpauth%3a%2f%2f")) {
         cleanUri = decodeURIComponent(cleanUri);
@@ -10244,20 +10268,20 @@ async function scanElementFor2Fa(element) {
     }
   } catch (e) {}
 }
-function scanPageImages() {
+function scanPageImages(force = false) {
   const images = document.querySelectorAll("img");
   for (const img of images) {
-    scanElementFor2Fa(img);
+    scanElementFor2Fa(img, force);
   }
   const canvases = document.querySelectorAll("canvas");
   for (const canvas of canvases) {
-    scanElementFor2Fa(canvas);
+    scanElementFor2Fa(canvas, force);
   }
   const svgs = document.querySelectorAll("svg");
   for (const svg of svgs) {
     const rect = svg.getBoundingClientRect();
     if (rect.width >= 50 && rect.height >= 50 && rect.width <= 800) {
-      scanElementFor2Fa(svg);
+      scanElementFor2Fa(svg, force);
     }
   }
 }
@@ -10358,7 +10382,7 @@ setInterval(() => {
 chrome.runtime.onMessage?.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "TRIGGER_MANUAL_SCAN") {
     console.info("[Xiaorui 2FA Security Vault] Manual scan requested.");
-    scanPageImages();
+    scanPageImages(true);
     sendResponse({ success: true });
   }
 });

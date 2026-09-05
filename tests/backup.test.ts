@@ -58,4 +58,13 @@ describe("Encrypted Backup (.sav) Test Suite", () => {
 
     expect(restoreEncryptedBackup(corruptedContent, backupPassword)).rejects.toThrow();
   });
+
+  it("should fail restoration when decrypted payload is not valid entries array", async () => {
+    const backupPassword = "Password123";
+    const invalidEntries = "not-an-array" as unknown as BackupEntryItem[];
+    const backupContent = await createEncryptedBackup(invalidEntries, backupPassword);
+    expect(restoreEncryptedBackup(backupContent, backupPassword)).rejects.toThrow(
+      "备份数据异常：缺少有效 2FA 账号条目数组",
+    );
+  });
 });
