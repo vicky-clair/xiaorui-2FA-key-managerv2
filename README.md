@@ -8,7 +8,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-blue?logo=typescript)](https://www.typescriptlang.org/)
 [![Bun](https://img.shields.io/badge/Runtime-Bun-f472b6?logo=bun)](https://bun.sh/)
 [![Expo](https://img.shields.io/badge/Platform-Expo%20%2F%20React%20Native-black?logo=expo)](https://expo.dev/)
-[![Electron](https://img.shields.io/badge/Desktop-Electron%2032-47848F?logo=electron)](https://www.electronjs.org/)
+[![Electron](https://img.shields.io/badge/Desktop-Electron%2039-47848F?logo=electron)](https://www.electronjs.org/)
 [![Cryptography](https://img.shields.io/badge/Security-AES--256--GCM%20%2B%20Argon2id-success)](packages/core)
 [![Tests](https://img.shields.io/badge/Tests-19%2F19%20Passing-brightgreen)](tests/)
 
@@ -104,6 +104,19 @@ The output file will be generated at:
 apps/desktop/release/Xiaorui 2FA Security Vault 1.0.0.exe
 ```
 Simply double-click the `.exe` to run anywhere on Windows without installing any dependencies!
+
+To generate both the NSIS installer and the portable executable, run:
+
+```bash
+bun run --cwd apps/desktop build:exe
+```
+
+Outputs:
+
+```text
+apps/desktop/release/Xiaorui 2FA Security Vault Setup 1.0.0.exe
+apps/desktop/release/Xiaorui 2FA Security Vault 1.0.0.exe
+```
 
 ---
 

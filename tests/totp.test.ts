@@ -55,7 +55,8 @@ describe("RFC 6238 / RFC 4226 TOTP & URI Test Suite", () => {
   });
 
   it("should safely parse standard otpauth URIs", () => {
-    const uri = "otpauth://totp/GitHub:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=GitHub&algorithm=SHA1&digits=6&period=30";
+    const uri =
+      "otpauth://totp/GitHub:user@example.com?secret=JBSWY3DPEHPK3PXP&issuer=GitHub&algorithm=SHA1&digits=6&period=30";
     const parsed = parseOtpAuthUri(uri);
 
     expect(parsed.issuer).toBe("GitHub");

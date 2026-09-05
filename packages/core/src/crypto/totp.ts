@@ -4,10 +4,15 @@
  * 支持 SHA1 / SHA256 / SHA512 散列算法，自适应处理 6 位/8 位数字验证码及多种时间步长。
  */
 
-import { base32ToUint8Array } from "./base32";
 import type { OTPAlgorithm } from "../types/domain";
+import { base32ToUint8Array } from "./base32";
 
-export { type OTPAlgorithm };
+export type { OTPAlgorithm };
+
+const MIN_OTP_DIGITS = 6;
+const MAX_OTP_DIGITS = 8;
+const MIN_OTP_PERIOD_SECONDS = 10;
+const MAX_OTP_PERIOD_SECONDS = 300;
 
 export interface ParsedOtpAuthUri {
   type: "totp" | "hotp";
@@ -29,10 +34,34 @@ function getWebCryptoAlgorithmName(algo: OTPAlgorithm): string {
       return "SHA-256";
     case "SHA512":
       return "SHA-512";
-    case "SHA1":
     default:
       return "SHA-1";
   }
+}
+
+function validateOtpDigits(digits: number): number {
+  if (!Number.isInteger(digits) || digits < MIN_OTP_DIGITS || digits > MAX_OTP_DIGITS) {
+    throw new Error("OTP 位数必须是 6 到 8 之间的整数");
+  }
+  return digits;
+}
+
+function validateOtpPeriod(period: number): number {
+  if (
+    !Number.isInteger(period) ||
+    period < MIN_OTP_PERIOD_SECONDS ||
+    period > MAX_OTP_PERIOD_SECONDS
+  ) {
+    throw new Error("TOTP 周期必须是 10 到 300 秒之间的整数");
+  }
+  return period;
+}
+
+function validateHotpCounter(counter: number): number {
+  if (!Number.isSafeInteger(counter) || counter < 0) {
+    throw new Error("HOTP 计数器必须是非负安全整数");
+  }
+  return counter;
 }
 
 /**
@@ -47,8 +76,10 @@ export async function generateHOTP(
   secret: string,
   counter: number,
   digits = 6,
-  algorithm: OTPAlgorithm = "SHA1"
+  algorithm: OTPAlgorithm = "SHA1",
 ): Promise<string> {
+  const safeCounter = validateHotpCounter(counter);
+  const safeDigits = validateOtpDigits(digits);
   const cleanSecret = secret.replace(/[\s\-]/g, "").toUpperCase();
   const keyBytes = base32ToUint8Array(cleanSecret);
 
@@ -56,21 +87,21 @@ export async function generateHOTP(
   const counterBuffer = new ArrayBuffer(8);
   const counterView = new DataView(counterBuffer);
   // JavaScript 数字超过 32 位安全整数时进行高低位拆分写入
-  const high = Math.floor(counter / 0x100000000);
-  const low = counter % 0x100000000;
+  const high = Math.floor(safeCounter / 0x100000000);
+  const low = safeCounter % 0x100000000;
   counterView.setUint32(0, high, false);
   counterView.setUint32(4, low, false);
 
   // 2. 导入 HMAC 密钥
   const cryptoKey = await globalThis.crypto.subtle.importKey(
     "raw",
-    keyBytes as any as BufferSource,
+    keyBytes as BufferSource,
     {
       name: "HMAC",
       hash: { name: getWebCryptoAlgorithmName(algorithm) },
     },
     false,
-    ["sign"]
+    ["sign"],
   );
 
   // 3. 计算 HMAC 签名散列
@@ -86,8 +117,8 @@ export async function generateHOTP(
     (hmacBytes[offset + 3] & 0xff);
 
   // 5. 取模生成指定位数的动态验证码
-  const otp = binary % Math.pow(10, digits);
-  return otp.toString().padStart(digits, "0");
+  const otp = binary % 10 ** safeDigits;
+  return otp.toString().padStart(safeDigits, "0");
 }
 
 /**
@@ -104,9 +135,10 @@ export async function generateTOTP(
   timestamp: number = Date.now(),
   period = 30,
   digits = 6,
-  algorithm: OTPAlgorithm = "SHA1"
+  algorithm: OTPAlgorithm = "SHA1",
 ): Promise<string> {
-  const counter = Math.floor(timestamp / 1000 / period);
+  const safePeriod = validateOtpPeriod(period);
+  const counter = Math.floor(timestamp / 1000 / safePeriod);
   return generateHOTP(secret, counter, digits, algorithm);
 }
 
@@ -116,9 +148,10 @@ export async function generateTOTP(
  * @param timestamp 当前时间戳 (毫秒)
  */
 export function getRemainingSeconds(period = 30, timestamp: number = Date.now()): number {
+  const safePeriod = validateOtpPeriod(period);
   const currentSeconds = Math.floor(timestamp / 1000);
-  const remainder = currentSeconds % period;
-  return period - remainder;
+  const remainder = currentSeconds % safePeriod;
+  return safePeriod - remainder;
 }
 
 /**
@@ -127,8 +160,9 @@ export function getRemainingSeconds(period = 30, timestamp: number = Date.now())
  * @param timestamp 当前时间戳 (毫秒)
  */
 export function getPeriodProgress(period = 30, timestamp: number = Date.now()): number {
-  const secondsInPeriod = (timestamp / 1000) % period;
-  return secondsInPeriod / period;
+  const safePeriod = validateOtpPeriod(period);
+  const secondsInPeriod = (timestamp / 1000) % safePeriod;
+  return secondsInPeriod / safePeriod;
 }
 
 /**
@@ -145,13 +179,16 @@ export function parseOtpAuthUri(uri: string): ParsedOtpAuthUri {
     cleanUri = decodeURIComponent(cleanUri);
   }
 
-  if (!cleanUri.toLowerCase().startsWith("otpauth://") && !cleanUri.toLowerCase().startsWith("otpauth:/")) {
+  if (
+    !cleanUri.toLowerCase().startsWith("otpauth://") &&
+    !cleanUri.toLowerCase().startsWith("otpauth:/")
+  ) {
     throw new Error("无效的 2FA 链接协议，必须以 otpauth:// 开头");
   }
 
   // 1. 使用正则稳妥提取 type (totp / hotp) 与 剩余路径和查询参数
   const typeMatch = cleanUri.match(/^otpauth:\/+(totp|hotp)(\/[^?]+)?(\?.*)?$/i);
-  
+
   let type: "totp" | "hotp" = "totp";
   let pathPart = "";
   let queryPart = "";
@@ -201,7 +238,7 @@ export function parseOtpAuthUri(uri: string): ParsedOtpAuthUri {
   }
 
   const issuerParam = searchParams.get("issuer");
-  const finalIssuer = issuerParam ? issuerParam.trim() : (labelIssuer || "2FA Service");
+  const finalIssuer = issuerParam ? issuerParam.trim() : labelIssuer || "2FA Service";
   const finalAccount = labelAccount || finalIssuer;
 
   const rawAlgo = (searchParams.get("algorithm") || "SHA1").toUpperCase();
@@ -209,10 +246,10 @@ export function parseOtpAuthUri(uri: string): ParsedOtpAuthUri {
   if (rawAlgo === "SHA256" || rawAlgo === "SHA-256") algorithm = "SHA256";
   if (rawAlgo === "SHA512" || rawAlgo === "SHA-512") algorithm = "SHA512";
 
-  const digits = parseInt(searchParams.get("digits") || "6", 10);
-  const period = parseInt(searchParams.get("period") || "30", 10);
+  const digits = validateOtpDigits(Number.parseInt(searchParams.get("digits") || "6", 10));
+  const period = validateOtpPeriod(Number.parseInt(searchParams.get("period") || "30", 10));
   const counterParam = searchParams.get("counter");
-  const counter = counterParam ? parseInt(counterParam, 10) : undefined;
+  const counter = counterParam ? validateHotpCounter(Number.parseInt(counterParam, 10)) : undefined;
 
   return {
     type,
@@ -220,8 +257,8 @@ export function parseOtpAuthUri(uri: string): ParsedOtpAuthUri {
     account: finalAccount,
     secret: secret.replace(/[\s\-_=]/g, "").toUpperCase(),
     algorithm,
-    digits: isNaN(digits) ? 6 : digits,
-    period: isNaN(period) ? 30 : period,
+    digits,
+    period,
     counter,
   };
 }

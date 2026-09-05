@@ -3,8 +3,9 @@
  * @description 使用原生 node:zlib 生成标准的 16x16, 48x48, 128x128 扩展 PNG 图标 (零第三方依赖)
  */
 
-import fs from "fs";
-import path from "path";
+import { Buffer } from "node:buffer";
+import fs from "node:fs";
+import path from "node:path";
 import zlib from "node:zlib";
 
 function createPNG(width: number, height: number): Buffer {
@@ -107,4 +108,3 @@ for (const size of ICON_SIZES) {
   fs.writeFileSync(outPath, pngBuf);
   console.log(`✅ Generated PNG icon: ${outPath} (${size}x${size}, ${pngBuf.length} bytes)`);
 }
-

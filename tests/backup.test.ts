@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import {
+  type BackupEntryItem,
   createEncryptedBackup,
   restoreEncryptedBackup,
-  type BackupEntryItem,
 } from "../packages/core/src";
 
 describe("Encrypted Backup (.sav) Test Suite", () => {
@@ -51,7 +51,10 @@ describe("Encrypted Backup (.sav) Test Suite", () => {
   it("should fail restoration on corrupted backup content", async () => {
     const backupPassword = "Password123";
     const backupContent = await createEncryptedBackup(sampleEntries, backupPassword);
-    const corruptedContent = backupContent.replace(/ciphertext":\s*"[^"]+/, 'ciphertext": "invalidBase64==');
+    const corruptedContent = backupContent.replace(
+      /ciphertext":\s*"[^"]+/,
+      'ciphertext": "invalidBase64==',
+    );
 
     expect(restoreEncryptedBackup(corruptedContent, backupPassword)).rejects.toThrow();
   });

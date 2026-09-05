@@ -3,7 +3,7 @@
  * @description 编译打包 Manifest V3 浏览器扩展
  */
 
-import path from "path";
+import path from "node:path";
 
 const EXTENSION_DIR = path.resolve(__dirname, "../apps/browser-extension");
 

@@ -13,7 +13,9 @@ export interface LicenseStatus {
 }
 
 export class FreeLimitReachedError extends Error {
-  constructor(message = "Free plan is limited to 10 accounts. Upgrade to Pro for unlimited accounts.") {
+  constructor(
+    message = "Free plan is limited to 10 accounts. Upgrade to Pro for unlimited accounts.",
+  ) {
     super(message);
     this.name = "FreeLimitReachedError";
   }
@@ -27,7 +29,7 @@ export const FREE_TIER_LIMITS = {
 } as const;
 
 export const PRO_TIER_LIMITS = {
-  maxAccounts: Infinity, // PRO 无限账号
+  maxAccounts: Number.POSITIVE_INFINITY, // PRO 无限账号
   allowEncryptedBackupExport: true, // 允许高强度 AES-256 加密备份导出
   allowEncryptedBackupImport: true,
   allowCloudSync: true,
@@ -74,8 +76,8 @@ export class EntitlementService {
         return { success: true, message: "已成功激活 Pro 商业版会员！" };
       }
       return { success: false, message: "无效的激活码" };
-    } catch (err: any) {
-      return { success: false, message: err?.message || "激活失败" };
+    } catch (err: unknown) {
+      return { success: false, message: err instanceof Error ? err.message : "激活失败" };
     }
   }
 
@@ -129,4 +131,3 @@ export function verifyLicenseKey(key: string): LicenseStatus {
 }
 
 export const defaultEntitlementService = new EntitlementService("free");
-

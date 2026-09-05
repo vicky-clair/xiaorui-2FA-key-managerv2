@@ -8,7 +8,7 @@
  */
 
 import { decryptAES256GCM, encryptAES256GCM, generateRandomKey } from "../crypto/aes";
-import { DEFAULT_KDF_PARAMS, deriveKey, type KDFParams } from "../crypto/kdf";
+import { DEFAULT_KDF_PARAMS, type KDFParams, deriveKey } from "../crypto/kdf";
 import { base64ToUint8Array, uint8ArrayToBase64, wipeBytes } from "../crypto/utils";
 import type { VaultMetadata } from "../types/domain";
 

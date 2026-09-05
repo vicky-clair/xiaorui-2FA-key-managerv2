@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import {
+  DEFAULT_KDF_PARAMS,
   base32ToUint8Array,
+  base64ToUint8Array,
   decryptAES256GCM,
   deriveKey,
   encryptAES256GCM,
@@ -8,9 +10,7 @@ import {
   timingSafeEqual,
   uint8ArrayToBase32,
   uint8ArrayToBase64,
-  base64ToUint8Array,
   wipeBytes,
-  DEFAULT_KDF_PARAMS,
 } from "../packages/core/src";
 
 describe("Security & Crypto Core Test Suite", () => {
@@ -94,9 +94,6 @@ describe("Security & Crypto Core Test Suite", () => {
       expect(new TextDecoder().decode(decodedBytes)).toBe(str);
     }
   });
-
-
-
 
   it("should reject invalid Base32 strings", () => {
     expect(() => base32ToUint8Array("1890InvalidBase32!")).toThrow();

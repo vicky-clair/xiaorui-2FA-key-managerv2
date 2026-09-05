@@ -5,8 +5,8 @@
  * 底层利用 Argon2id 重新派生高强密钥并执行 AES-256-GCM 封装，彻底杜绝数据泄露。
  */
 
-import { decryptAES256GCM, encryptAES256GCM, type EncryptedData } from "../crypto/aes";
-import { DEFAULT_KDF_PARAMS, deriveKey, type KDFParams } from "../crypto/kdf";
+import { type EncryptedData, decryptAES256GCM, encryptAES256GCM } from "../crypto/aes";
+import { DEFAULT_KDF_PARAMS, type KDFParams, deriveKey } from "../crypto/kdf";
 import { generateRandomBytes, uint8ArrayToBase64, wipeBytes } from "../crypto/utils";
 import type { EntryPayload } from "../types/domain";
 
@@ -28,6 +28,48 @@ export interface EncryptedBackupFile {
   encrypted: EncryptedData;
 }
 
+const MAX_BACKUP_FILE_CHARS = 10 * 1024 * 1024;
+const MAX_BACKUP_ENTRIES = 10000;
+const KDF_LIMITS = {
+  minIterations: 1,
+  maxIterations: 10,
+  minMemory: 8 * 1024,
+  maxMemory: 256 * 1024,
+  minParallelism: 1,
+  maxParallelism: 8,
+  hashLength: 32,
+};
+
+function validateBackupKdfParams(kdf: KDFParams): void {
+  if (!kdf || typeof kdf.salt !== "string") {
+    throw new Error("备份文件 KDF 参数缺失或格式错误");
+  }
+  if (
+    !Number.isInteger(kdf.iterations) ||
+    kdf.iterations < KDF_LIMITS.minIterations ||
+    kdf.iterations > KDF_LIMITS.maxIterations
+  ) {
+    throw new Error("备份文件 KDF 迭代参数超出安全范围");
+  }
+  if (
+    !Number.isInteger(kdf.memory) ||
+    kdf.memory < KDF_LIMITS.minMemory ||
+    kdf.memory > KDF_LIMITS.maxMemory
+  ) {
+    throw new Error("备份文件 KDF 内存参数超出安全范围");
+  }
+  if (
+    !Number.isInteger(kdf.parallelism) ||
+    kdf.parallelism < KDF_LIMITS.minParallelism ||
+    kdf.parallelism > KDF_LIMITS.maxParallelism
+  ) {
+    throw new Error("备份文件 KDF 并行参数超出安全范围");
+  }
+  if (kdf.hashLength !== KDF_LIMITS.hashLength) {
+    throw new Error("备份文件 KDF 输出长度不受支持");
+  }
+}
+
 /**
  * 将 2FA 账号列表导出为高强度加密的 .sav 备份 JSON 文本
  * @param entries 需要导出的 2FA 账号明文载荷列表
@@ -38,7 +80,7 @@ export interface EncryptedBackupFile {
 export async function createEncryptedBackup(
   entries: BackupEntryItem[],
   backupPassword: string,
-  vaultName = "My Vault"
+  vaultName = "My Vault",
 ): Promise<string> {
   if (!backupPassword || backupPassword.length < 6) {
     throw new Error("备份密码长度至少需要 6 个字符");
@@ -90,8 +132,12 @@ export async function createEncryptedBackup(
  */
 export async function restoreEncryptedBackup(
   backupFileContent: string,
-  backupPassword: string
+  backupPassword: string,
 ): Promise<BackupPayload> {
+  if (backupFileContent.length > MAX_BACKUP_FILE_CHARS) {
+    throw new Error("备份文件过大，已拒绝导入");
+  }
+
   let parsed: EncryptedBackupFile;
   try {
     parsed = JSON.parse(backupFileContent);
@@ -110,6 +156,7 @@ export async function restoreEncryptedBackup(
   if (!parsed.kdf || !parsed.encrypted) {
     throw new Error("备份文件结构不完整或已损坏");
   }
+  validateBackupKdfParams(parsed.kdf);
 
   // 1. 从备份文件元数据中提取盐值并派生解密密钥
   const backupKey = await deriveKey(backupPassword, parsed.kdf);
@@ -121,6 +168,9 @@ export async function restoreEncryptedBackup(
 
     if (!Array.isArray(payload.entries)) {
       throw new Error("备份数据异常：缺少有效 2FA 账号条目数组");
+    }
+    if (payload.entries.length > MAX_BACKUP_ENTRIES) {
+      throw new Error("备份数据异常：条目数量超出安全限制");
     }
 
     return payload;

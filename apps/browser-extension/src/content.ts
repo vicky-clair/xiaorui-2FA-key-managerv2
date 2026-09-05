@@ -10,11 +10,23 @@
  */
 
 import jsQR from "jsqr";
-import { parseOtpAuthUri, is2FaOtpAuthUri, ParsedOtpAuth } from "./crypto";
+import { type ParsedOtpAuth, is2FaOtpAuthUri, parseOtpAuthUri } from "./crypto";
 
-declare const chrome: any;
+declare const chrome: typeof globalThis.chrome;
 
-console.log("🛡️ [Xiaorui 2FA Security Vault] 2FA 实时二维码扫描监听引擎已在当前网页就绪。");
+interface BarcodeDetectorLike {
+  detect(source: HTMLImageElement | HTMLCanvasElement): Promise<Array<{ rawValue?: string }>>;
+}
+
+interface WindowWithBarcodeDetector extends Window {
+  BarcodeDetector?: new (options: { formats: string[] }) => BarcodeDetectorLike;
+}
+
+interface FetchImageResponse {
+  dataUrl?: string;
+}
+
+console.info("[Xiaorui 2FA Security Vault] 2FA scanner ready.");
 
 // 记录已检测并提示过的 2FA 密钥，防止重复弹窗打扰
 const notifiedSecrets = new Set<string>();
@@ -22,10 +34,11 @@ const notifiedSecrets = new Set<string>();
 const scannedElements = new WeakSet<HTMLElement | SVGElement>();
 
 // 初始化 BarcodeDetector 原生二维码探测器（现代 Chrome / Edge 均原生支持）
-let barcodeDetector: any = null;
-if (typeof (window as any).BarcodeDetector !== "undefined") {
+let barcodeDetector: BarcodeDetectorLike | null = null;
+const barcodeWindow = window as WindowWithBarcodeDetector;
+if (typeof barcodeWindow.BarcodeDetector !== "undefined") {
   try {
-    barcodeDetector = new (window as any).BarcodeDetector({ formats: ["qr_code"] });
+    barcodeDetector = new barcodeWindow.BarcodeDetector({ formats: ["qr_code"] });
   } catch {}
 }
 
@@ -52,7 +65,7 @@ async function getImageDataRobust(img: HTMLImageElement): Promise<ImageData | nu
   }
 
   // 2. 尝试前端 fetch blob 转 ImageBitmap
-  if (img.src && img.src.startsWith("http")) {
+  if (img.src?.startsWith("http")) {
     try {
       const resp = await fetch(img.src);
       const blob = await resp.blob();
@@ -71,10 +84,13 @@ async function getImageDataRobust(img: HTMLImageElement): Promise<ImageData | nu
 
     // 3. 调用 Background 强权限代理通道
     try {
-      const b64Data: string = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({ type: "FETCH_IMAGE_BASE64", url: img.src }, (res: any) => {
-          resolve(res?.dataUrl || null);
-        });
+      const b64Data = await new Promise<string | null>((resolve) => {
+        chrome.runtime.sendMessage(
+          { type: "FETCH_IMAGE_BASE64", url: img.src },
+          (res?: FetchImageResponse) => {
+            resolve(res?.dataUrl || null);
+          },
+        );
       });
 
       if (b64Data) {
@@ -104,14 +120,14 @@ async function getImageDataRobust(img: HTMLImageElement): Promise<ImageData | nu
  * 图像解码核心函数：使用 jsQR 与 BarcodeDetector 综合解码
  */
 async function decodeQrCodeFromSource(
-  source: HTMLImageElement | HTMLCanvasElement | ImageData
+  source: HTMLImageElement | HTMLCanvasElement | ImageData,
 ): Promise<string | null> {
   // 若传入的是 ImageData 像素
   if (source instanceof ImageData) {
     const qr = jsQR(source.data, source.width, source.height, {
       inversionAttempts: "attemptBoth",
     });
-    if (qr && qr.data) return qr.data;
+    if (qr?.data) return qr.data;
     return null;
   }
 
@@ -119,7 +135,7 @@ async function decodeQrCodeFromSource(
   if (barcodeDetector && !(source instanceof ImageData)) {
     try {
       const barcodes = await barcodeDetector.detect(source);
-      if (barcodes && barcodes.length > 0) {
+      if (barcodes?.length > 0) {
         for (const b of barcodes) {
           if (b.rawValue) return b.rawValue;
         }
@@ -134,7 +150,7 @@ async function decodeQrCodeFromSource(
       const qr = jsQR(imgData.data, imgData.width, imgData.height, {
         inversionAttempts: "attemptBoth",
       });
-      if (qr && qr.data) return qr.data;
+      if (qr?.data) return qr.data;
     }
   } else if (source instanceof HTMLCanvasElement) {
     try {
@@ -144,7 +160,7 @@ async function decodeQrCodeFromSource(
         const qr = jsQR(imgData.data, imgData.width, imgData.height, {
           inversionAttempts: "attemptBoth",
         });
-        if (qr && qr.data) return qr.data;
+        if (qr?.data) return qr.data;
       }
     } catch {}
   }
@@ -201,7 +217,10 @@ async function scanElementFor2Fa(element: HTMLElement | SVGElement): Promise<voi
       }
 
       const parsed = parseOtpAuthUri(cleanUri);
-      console.log("🛡️ [Xiaorui 2FA Security Vault] 成功识别 2FA 二维码:", parsed.issuer, parsed.account);
+      console.info("[Xiaorui 2FA Security Vault] 2FA QR Code detected:", {
+        issuer: parsed.issuer,
+        account: parsed.account,
+      });
 
       if (notifiedSecrets.has(parsed.secret)) {
         return; // 已经提示过该密钥，不重复打扰
@@ -229,18 +248,22 @@ async function scanElementFor2Fa(element: HTMLElement | SVGElement): Promise<voi
  */
 function scanPageImages() {
   const images = document.querySelectorAll<HTMLImageElement>("img");
-  images.forEach((img) => scanElementFor2Fa(img));
+  for (const img of images) {
+    scanElementFor2Fa(img);
+  }
 
   const canvases = document.querySelectorAll<HTMLCanvasElement>("canvas");
-  canvases.forEach((canvas) => scanElementFor2Fa(canvas));
+  for (const canvas of canvases) {
+    scanElementFor2Fa(canvas);
+  }
 
   const svgs = document.querySelectorAll<SVGElement>("svg");
-  svgs.forEach((svg) => {
+  for (const svg of svgs) {
     const rect = svg.getBoundingClientRect();
     if (rect.width >= 50 && rect.height >= 50 && rect.width <= 800) {
       scanElementFor2Fa(svg);
     }
-  });
+  }
 }
 
 /**
@@ -303,7 +326,7 @@ function showInPage2FaPrompt(data: ParsedOtpAuth) {
   // 直接唤起桌面端应用并在应用内打开添加 2FA 界面
   const doLaunchApp = () => {
     const deepLinkUri = `secureauth://import?uri=${encodeURIComponent(data.rawUri)}`;
-    
+
     // 通过自定义系统协议唤起桌面端应用
     const link = document.createElement("a");
     link.href = deepLinkUri;
@@ -326,10 +349,7 @@ function showInPage2FaPrompt(data: ParsedOtpAuth) {
 }
 
 function escapeHtml(str: string): string {
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 // ----------------- 启动扫描与 DOM 监听器 -----------------
@@ -368,10 +388,16 @@ setInterval(() => {
 }, 2000);
 
 // 4. 监听来自 Background 的右键菜单扫描触发
-chrome.runtime.onMessage?.addListener((msg: any, sender: any, sendResponse: any) => {
-  if (msg.type === "TRIGGER_MANUAL_SCAN") {
-    console.log("🛡️ [Xiaorui 2FA Security Vault] 收到手动右键扫描指令，正在全面扫描页面图像...");
-    scanPageImages();
-    sendResponse({ success: true });
-  }
-});
+chrome.runtime.onMessage?.addListener(
+  (
+    msg: { type?: string },
+    _sender: chrome.runtime.MessageSender,
+    sendResponse: (response?: unknown) => void,
+  ) => {
+    if (msg.type === "TRIGGER_MANUAL_SCAN") {
+      console.info("[Xiaorui 2FA Security Vault] Manual scan requested.");
+      scanPageImages();
+      sendResponse({ success: true });
+    }
+  },
+);

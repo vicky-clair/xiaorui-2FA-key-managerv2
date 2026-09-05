@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
-import { useColorScheme as useDeviceColorScheme } from "react-native";
 import { Colors } from "@/constants/theme";
+import type React from "react";
+import { createContext, useContext, useEffect, useState } from "react";
+import { useColorScheme as useDeviceColorScheme } from "react-native";
 
 export type ColorSchemeType = "dark" | "light";
 

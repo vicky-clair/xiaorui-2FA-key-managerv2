@@ -4,6 +4,33 @@
 
 ---
 
+## [1.1.1-security] - 2026-09-05
+
+### 🛡️ 安全加固 (Security Hardening)
+- 桌面端与 Expo 本地静态服务新增路径穿越防护、安全响应头与 CSP 基线。
+- Electron 禁止新窗口打开，并拦截非本地 origin 导航。
+- 浏览器插件权限从 `<all_urls>` 收紧为 `http://*/*` 与 `https://*/*`，并关闭 `all_frames` 和 `match_about_blank`。
+- 插件后台图片抓取增加 sender 校验、URL scheme 校验、MIME 校验、5 MB 大小限制与 `credentials: "omit"`。
+- 插件端 PBKDF2-SHA256 新 vault 迭代次数提升到 600000，并支持旧 100000 迭代 vault 解锁后迁移。
+- TOTP/HOTP 增加 digits、period、counter、algorithm 边界校验。
+- `.sav` 备份恢复增加文件大小、entry 数量与 KDF 参数边界校验。
+
+### 📦 打包与依赖 (Packaging & Dependencies)
+- Electron 升级到 39 系列，electron-builder 升级到 26.15 系列。
+- 根 `package.json` 添加 `overrides`，锁定 `qs`、`decode-uri-component`、`@xmldom/xmldom`、`uuid` 修复版本。
+- 修复插件 zip 打包脚本，改用系统 `tar -a -cf`，避免 PowerShell 执行策略阻断 `Compress-Archive`。
+- 修复桌面端 CSP 缺少 `worker-src 'self' blob:` 导致打包软件启动后数据库初始化卡住的问题。
+- 修复 `apps/desktop/package.json` 的 `prebuild` 命令，确保桌面打包前真正执行 Expo Web 导出。
+
+### ✅ 验证 (Verification)
+- `bun run lint` 通过。
+- `bun test` 通过，19 项测试全绿。
+- `bun run build:web` 通过。
+- `bun run package:extension-zip` 通过。
+- `bun run --cwd apps/desktop build:exe` 通过。
+
+---
+
 ## [1.1.0] - 2026-08-20
 
 ### 🚀 新增功能 (Features)

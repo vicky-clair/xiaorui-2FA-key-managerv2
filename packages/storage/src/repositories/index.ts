@@ -9,6 +9,10 @@ import * as SQLite from "expo-sqlite";
 import type { Kysely } from "kysely";
 import type { Database } from "../database";
 
+type StoredAuthenticatorEntry = Omit<AuthenticatorEntry, "favorite"> & {
+  favorite: boolean | number;
+};
+
 /**
  * 主保险库元数据仓储 (VaultRepository)
  */
@@ -37,7 +41,7 @@ export class VaultRepository {
           vault.encryptedVaultKey,
           vault.vaultKeyNonce,
           vault.vaultKeyAuthTag,
-        ]
+        ],
       );
     } catch {
       await this.db.insertInto("vault_metadata").values(vault).execute();
@@ -117,7 +121,7 @@ export class AuthenticatorEntryRepository {
           entry.ciphertext,
           entry.nonce,
           entry.authTag,
-        ]
+        ],
       );
     } catch {
       // 回退至 Kysely ORM 插入
@@ -125,9 +129,9 @@ export class AuthenticatorEntryRepository {
         .insertInto("authenticator_entries")
         .values({
           ...entry,
-          favorite: favoriteInt,
+          favorite: Boolean(favoriteInt),
           sortOrder: sortOrderInt,
-        } as any)
+        })
         .execute();
     }
   }
@@ -136,7 +140,7 @@ export class AuthenticatorEntryRepository {
    * 根据 ID 获取单个 2FA 密文记录
    */
   async getEntryById(id: string): Promise<AuthenticatorEntry | undefined> {
-    const row: any = await this.db
+    const row = await this.db
       .selectFrom("authenticator_entries")
       .selectAll()
       .where("id", "=", id)
@@ -155,9 +159,9 @@ export class AuthenticatorEntryRepository {
   async getEntriesByVaultId(vaultId: string): Promise<AuthenticatorEntry[]> {
     try {
       const expoDb = await SQLite.openDatabaseAsync("2fas.db");
-      const rows = await expoDb.getAllAsync<any>(
-        `SELECT * FROM authenticator_entries WHERE vaultId = ? ORDER BY sortOrder ASC, createdAt DESC;`,
-        [vaultId]
+      const rows = await expoDb.getAllAsync<StoredAuthenticatorEntry>(
+        "SELECT * FROM authenticator_entries WHERE vaultId = ? ORDER BY sortOrder ASC, createdAt DESC;",
+        [vaultId],
       );
       return rows.map((row) => ({
         ...row,
@@ -172,7 +176,7 @@ export class AuthenticatorEntryRepository {
         .orderBy("createdAt", "desc")
         .execute();
 
-      return rows.map((row: any) => ({
+      return rows.map((row) => ({
         ...row,
         favorite: Boolean(row.favorite),
       }));
@@ -183,7 +187,7 @@ export class AuthenticatorEntryRepository {
    * 更新指定 2FA 账号 (如修改收藏状态、备注或重排序)
    */
   async updateEntry(id: string, updates: Partial<AuthenticatorEntry>): Promise<void> {
-    const sanitizedUpdates: any = {
+    const sanitizedUpdates: Partial<AuthenticatorEntry> = {
       ...updates,
       updatedAt: new Date().toISOString(),
     };
@@ -204,7 +208,7 @@ export class AuthenticatorEntryRepository {
   async deleteEntry(id: string): Promise<void> {
     try {
       const expoDb = await SQLite.openDatabaseAsync("2fas.db");
-      await expoDb.runAsync(`DELETE FROM authenticator_entries WHERE id = ?;`, [id]);
+      await expoDb.runAsync("DELETE FROM authenticator_entries WHERE id = ?;", [id]);
     } catch {
       await this.db.deleteFrom("authenticator_entries").where("id", "=", id).execute();
     }

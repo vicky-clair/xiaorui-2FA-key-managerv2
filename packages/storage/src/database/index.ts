@@ -29,7 +29,7 @@ export async function createDatabase(dbName = "2fas.db"): Promise<Kysely<Databas
     const expoDb = await SQLite.openDatabaseAsync(dbName);
     dbInstance = new Kysely<Database>({
       dialect: new ExpoDialect({
-        database: expoDb as any,
+        database: expoDb as never,
       }),
     });
   }
@@ -81,17 +81,23 @@ export async function initializeSchema(db?: Kysely<Database>): Promise<void> {
 
   // 3. 动态热迁移检查：利用 PRAGMA table_info 自动为老数据库补充缺失字段
   try {
-    const tableInfo = await expoDb.getAllAsync<{ name: string }>("PRAGMA table_info(authenticator_entries);");
+    const tableInfo = await expoDb.getAllAsync<{ name: string }>(
+      "PRAGMA table_info(authenticator_entries);",
+    );
     const columnNames = new Set(tableInfo.map((col) => col.name));
 
     if (!columnNames.has("vaultId")) {
       await expoDb.execAsync("ALTER TABLE authenticator_entries ADD COLUMN vaultId TEXT;");
     }
     if (!columnNames.has("favorite")) {
-      await expoDb.execAsync("ALTER TABLE authenticator_entries ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0;");
+      await expoDb.execAsync(
+        "ALTER TABLE authenticator_entries ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0;",
+      );
     }
     if (!columnNames.has("sortOrder")) {
-      await expoDb.execAsync("ALTER TABLE authenticator_entries ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0;");
+      await expoDb.execAsync(
+        "ALTER TABLE authenticator_entries ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0;",
+      );
     }
     if (!columnNames.has("ciphertext")) {
       await expoDb.execAsync("ALTER TABLE authenticator_entries ADD COLUMN ciphertext TEXT;");

@@ -9963,6 +9963,28 @@ var require_jsQR = __commonJS((exports, module) => {
 var import_jsqr = __toESM(require_jsQR(), 1);
 
 // apps/browser-extension/src/crypto.ts
+var MIN_OTP_DIGITS = 6;
+var MAX_OTP_DIGITS = 8;
+var MIN_OTP_PERIOD_SECONDS = 10;
+var MAX_OTP_PERIOD_SECONDS = 300;
+function validateOtpDigits(digits) {
+  if (!Number.isInteger(digits) || digits < MIN_OTP_DIGITS || digits > MAX_OTP_DIGITS) {
+    throw new Error("OTP 位数必须是 6 到 8 之间的整数");
+  }
+  return digits;
+}
+function validateOtpPeriod(period) {
+  if (!Number.isInteger(period) || period < MIN_OTP_PERIOD_SECONDS || period > MAX_OTP_PERIOD_SECONDS) {
+    throw new Error("TOTP 周期必须是 10 到 300 秒之间的整数");
+  }
+  return period;
+}
+function validateHotpCounter(counter) {
+  if (!Number.isSafeInteger(counter) || counter < 0) {
+    throw new Error("HOTP 计数器必须是非负安全整数");
+  }
+  return counter;
+}
 function parseOtpAuthUri(uri) {
   let cleanUri = uri.trim();
   if (cleanUri.includes("?uri=")) {
@@ -10026,18 +10048,18 @@ function parseOtpAuthUri(uri) {
     algorithm = "SHA-256";
   if (rawAlgo === "SHA512" || rawAlgo === "SHA-512")
     algorithm = "SHA-512";
-  const digits = parseInt(searchParams.get("digits") || "6", 10);
-  const period = parseInt(searchParams.get("period") || "30", 10);
+  const digits = validateOtpDigits(Number.parseInt(searchParams.get("digits") || "6", 10));
+  const period = validateOtpPeriod(Number.parseInt(searchParams.get("period") || "30", 10));
   const counterStr = searchParams.get("counter");
-  const counter = counterStr ? parseInt(counterStr, 10) : undefined;
+  const counter = counterStr ? validateHotpCounter(Number.parseInt(counterStr, 10)) : undefined;
   return {
     type,
     issuer: finalIssuer,
     account: finalAccount,
     secret: secret.replace(/[\s\-_=]/g, "").toUpperCase(),
     algorithm,
-    digits: isNaN(digits) ? 6 : digits,
-    period: isNaN(period) ? 30 : period,
+    digits,
+    period,
     counter,
     rawUri: cleanUri
   };
@@ -10057,13 +10079,14 @@ function is2FaOtpAuthUri(text) {
 }
 
 // apps/browser-extension/src/content.ts
-console.log("\uD83D\uDEE1️ [Xiaorui 2FA Security Vault] 2FA 实时二维码扫描监听引擎已在当前网页就绪。");
+console.info("[Xiaorui 2FA Security Vault] 2FA scanner ready.");
 var notifiedSecrets = new Set;
 var scannedElements = new WeakSet;
 var barcodeDetector = null;
-if (typeof window.BarcodeDetector !== "undefined") {
+var barcodeWindow = window;
+if (typeof barcodeWindow.BarcodeDetector !== "undefined") {
   try {
-    barcodeDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    barcodeDetector = new barcodeWindow.BarcodeDetector({ formats: ["qr_code"] });
   } catch {}
 }
 async function getImageDataRobust(img) {
@@ -10081,7 +10104,7 @@ async function getImageDataRobust(img) {
       return ctx.getImageData(0, 0, width, height);
     }
   } catch (corsErr) {}
-  if (img.src && img.src.startsWith("http")) {
+  if (img.src?.startsWith("http")) {
     try {
       const resp = await fetch(img.src);
       const blob = await resp.blob();
@@ -10126,14 +10149,14 @@ async function decodeQrCodeFromSource(source) {
     const qr = import_jsqr.default(source.data, source.width, source.height, {
       inversionAttempts: "attemptBoth"
     });
-    if (qr && qr.data)
+    if (qr?.data)
       return qr.data;
     return null;
   }
   if (barcodeDetector && !(source instanceof ImageData)) {
     try {
       const barcodes = await barcodeDetector.detect(source);
-      if (barcodes && barcodes.length > 0) {
+      if (barcodes?.length > 0) {
         for (const b of barcodes) {
           if (b.rawValue)
             return b.rawValue;
@@ -10147,7 +10170,7 @@ async function decodeQrCodeFromSource(source) {
       const qr = import_jsqr.default(imgData.data, imgData.width, imgData.height, {
         inversionAttempts: "attemptBoth"
       });
-      if (qr && qr.data)
+      if (qr?.data)
         return qr.data;
     }
   } else if (source instanceof HTMLCanvasElement) {
@@ -10158,7 +10181,7 @@ async function decodeQrCodeFromSource(source) {
         const qr = import_jsqr.default(imgData.data, imgData.width, imgData.height, {
           inversionAttempts: "attemptBoth"
         });
-        if (qr && qr.data)
+        if (qr?.data)
           return qr.data;
       }
     } catch {}
@@ -10203,7 +10226,10 @@ async function scanElementFor2Fa(element) {
         return;
       }
       const parsed = parseOtpAuthUri(cleanUri);
-      console.log("\uD83D\uDEE1️ [Xiaorui 2FA Security Vault] 成功识别 2FA 二维码:", parsed.issuer, parsed.account);
+      console.info("[Xiaorui 2FA Security Vault] 2FA QR Code detected:", {
+        issuer: parsed.issuer,
+        account: parsed.account
+      });
       if (notifiedSecrets.has(parsed.secret)) {
         return;
       }
@@ -10220,16 +10246,20 @@ async function scanElementFor2Fa(element) {
 }
 function scanPageImages() {
   const images = document.querySelectorAll("img");
-  images.forEach((img) => scanElementFor2Fa(img));
+  for (const img of images) {
+    scanElementFor2Fa(img);
+  }
   const canvases = document.querySelectorAll("canvas");
-  canvases.forEach((canvas) => scanElementFor2Fa(canvas));
+  for (const canvas of canvases) {
+    scanElementFor2Fa(canvas);
+  }
   const svgs = document.querySelectorAll("svg");
-  svgs.forEach((svg) => {
+  for (const svg of svgs) {
     const rect = svg.getBoundingClientRect();
     if (rect.width >= 50 && rect.height >= 50 && rect.width <= 800) {
       scanElementFor2Fa(svg);
     }
-  });
+  }
 }
 function showInPage2FaPrompt(data) {
   const existingToast = document.getElementById("sa-2fa-floating-toast");
@@ -10325,9 +10355,9 @@ mutationObserver.observe(document.body, {
 setInterval(() => {
   scanPageImages();
 }, 2000);
-chrome.runtime.onMessage?.addListener((msg, sender, sendResponse) => {
+chrome.runtime.onMessage?.addListener((msg, _sender, sendResponse) => {
   if (msg.type === "TRIGGER_MANUAL_SCAN") {
-    console.log("\uD83D\uDEE1️ [Xiaorui 2FA Security Vault] 收到手动右键扫描指令，正在全面扫描页面图像...");
+    console.info("[Xiaorui 2FA Security Vault] Manual scan requested.");
     scanPageImages();
     sendResponse({ success: true });
   }

@@ -7,12 +7,22 @@
  * 3. 协调与 popup 之间的数据存取与保险库状态。
  */
 
-import { deriveKeyFromPassword, encryptData, decryptData, ParsedOtpAuth } from "./crypto";
+import {
+  type ExtensionKdfParams,
+  type ParsedOtpAuth,
+  decryptData,
+  deriveKeyFromPassword,
+  encryptData,
+  getDefaultExtensionKdfParams,
+  isLegacyExtensionKdfParams,
+  normalizeExtensionKdfParams,
+} from "./crypto";
 
-declare const chrome: any;
+declare const chrome: typeof globalThis.chrome;
 
 interface VaultStorageSchema {
   vaultSaltHex?: string;
+  vaultKdf?: ExtensionKdfParams;
   vaultVerifier?: { ciphertextHex: string; ivHex: string };
   entries?: Array<{
     id: string;
@@ -24,6 +34,79 @@ interface VaultStorageSchema {
 
 // 缓存当前内存会话中的解密密码（只在浏览器活跃期间短暂驻留）
 let sessionKey: CryptoKey | null = null;
+
+function hexToBytes(hex: string): Uint8Array {
+  if (!/^[0-9a-f]+$/i.test(hex) || hex.length % 2 !== 0) {
+    throw new Error("无效的十六进制编码");
+  }
+  const pairs = hex.match(/.{1,2}/g);
+  if (!pairs) {
+    throw new Error("无效的十六进制编码");
+  }
+  return new Uint8Array(pairs.map((b) => Number.parseInt(b, 16)));
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function isExtensionSender(sender: chrome.runtime.MessageSender): boolean {
+  return sender?.id === chrome.runtime.id;
+}
+
+function isAllowedImageUrl(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+async function migrateVaultKdfIfNeeded(
+  password: string,
+  oldKey: CryptoKey,
+  oldData: VaultStorageSchema,
+): Promise<CryptoKey> {
+  const currentKdf = normalizeExtensionKdfParams(oldData.vaultKdf);
+  if (!isLegacyExtensionKdfParams(currentKdf)) {
+    return oldKey;
+  }
+
+  const entries = oldData.entries || [];
+  const decryptedPayloads = [];
+  for (const item of entries) {
+    const plain = await decryptData(item.ciphertextHex, item.ivHex, oldKey);
+    decryptedPayloads.push({ ...item, plain });
+  }
+
+  const newSalt = crypto.getRandomValues(new Uint8Array(16));
+  const newKdf = getDefaultExtensionKdfParams();
+  const newKey = await deriveKeyFromPassword(password, newSalt, newKdf);
+  const newVerifier = await encryptData("VAULT_VERIFIER_OK", newKey);
+  const newEntries = [];
+
+  for (const item of decryptedPayloads) {
+    const encrypted = await encryptData(item.plain, newKey);
+    newEntries.push({
+      id: item.id,
+      ciphertextHex: encrypted.ciphertextHex,
+      ivHex: encrypted.ivHex,
+      createdAt: item.createdAt,
+    });
+  }
+
+  await chrome.storage.local.set({
+    vaultSaltHex: bytesToHex(newSalt),
+    vaultKdf: newKdf,
+    vaultVerifier: newVerifier,
+    entries: newEntries,
+  });
+
+  return newKey;
+}
 
 // 监听扩展安装与启动事件
 chrome.runtime.onInstalled.addListener(() => {
@@ -38,11 +121,13 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 // 监听右键菜单点击
-chrome.contextMenus?.onClicked?.addListener((info: any, tab: any) => {
-  if (info.menuItemId === "sa-scan-2fa" && tab?.id) {
-    chrome.tabs.sendMessage(tab.id, { type: "TRIGGER_MANUAL_SCAN" });
-  }
-});
+chrome.contextMenus?.onClicked?.addListener(
+  (info: chrome.contextMenus.OnClickData, tab?: chrome.tabs.Tab) => {
+    if (info.menuItemId === "sa-scan-2fa" && tab?.id) {
+      chrome.tabs.sendMessage(tab.id, { type: "TRIGGER_MANUAL_SCAN" });
+    }
+  },
+);
 
 // 监听消息通道
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -51,8 +136,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       switch (message.type) {
         // 1. 页面检测到 2FA 二维码
         case "SCAN_2FA_DETECTED": {
+          if (!isExtensionSender(sender)) {
+            throw new Error("拒绝来自未知来源的扩展消息");
+          }
           const payload: ParsedOtpAuth = message.payload;
-          console.log("🔍 2FA QR Code detected on tab:", sender.tab?.id, payload);
+          console.info("2FA QR Code detected on tab:", sender.tab?.id, {
+            issuer: payload?.issuer,
+            account: payload?.account,
+          });
 
           // 存入待导入暂存区
           await chrome.storage.session.set({
@@ -88,20 +179,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         // 4. 跨域图像抓取通道 (绕过 Canvas Tainted 跨域安全限制)
         case "FETCH_IMAGE_BASE64": {
+          if (!isExtensionSender(sender) || !isAllowedImageUrl(message.url)) {
+            throw new Error("拒绝抓取未授权的图像 URL");
+          }
           try {
-            const resp = await fetch(message.url);
+            const resp = await fetch(message.url, { credentials: "omit", cache: "no-store" });
+            const contentLength = Number(resp.headers.get("content-length") || 0);
+            if (contentLength > 5 * 1024 * 1024) {
+              throw new Error("图像文件过大");
+            }
             const blob = await resp.blob();
+            if (blob.size > 5 * 1024 * 1024 || !blob.type.startsWith("image/")) {
+              throw new Error("仅允许抓取 5MB 以内的图像资源");
+            }
             const buffer = await blob.arrayBuffer();
             const bytes = new Uint8Array(buffer);
-            let binary = '';
+            let binary = "";
             for (let i = 0; i < bytes.byteLength; i++) {
               binary += String.fromCharCode(bytes[i]);
             }
             const base64 = btoa(binary);
-            const mimeType = blob.type || 'image/png';
+            const mimeType = blob.type || "image/png";
             sendResponse({ success: true, dataUrl: `data:${mimeType};base64,${base64}` });
-          } catch (e: any) {
-            sendResponse({ success: false, error: e.message });
+          } catch (e: unknown) {
+            sendResponse({ success: false, error: e instanceof Error ? e.message : String(e) });
           }
           break;
         }
@@ -125,11 +226,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
 
           const salt = crypto.getRandomValues(new Uint8Array(16));
-          const saltHex = Array.from(salt)
-            .map((b) => b.toString(16).padStart(2, "0"))
-            .join("");
+          const saltHex = bytesToHex(salt);
+          const kdf = getDefaultExtensionKdfParams();
 
-          const key = await deriveKeyFromPassword(password, salt);
+          const key = await deriveKeyFromPassword(password, salt, kdf);
           sessionKey = key;
 
           // 存储校验用密文
@@ -137,6 +237,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
           await chrome.storage.local.set({
             vaultSaltHex: saltHex,
+            vaultKdf: kdf,
             vaultVerifier: verifier,
             entries: [],
           });
@@ -150,23 +251,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           const { password } = message;
           const data: VaultStorageSchema = await chrome.storage.local.get([
             "vaultSaltHex",
+            "vaultKdf",
             "vaultVerifier",
+            "entries",
           ]);
 
           if (!data.vaultSaltHex || !data.vaultVerifier) {
             throw new Error("保险库尚未初始化");
           }
 
-          const salt = new Uint8Array(
-            data.vaultSaltHex.match(/.{1,2}/g)!.map((b) => parseInt(b, 16))
-          );
-          const key = await deriveKeyFromPassword(password, salt);
+          const salt = hexToBytes(data.vaultSaltHex);
+          const kdf = normalizeExtensionKdfParams(data.vaultKdf);
+          let key = await deriveKeyFromPassword(password, salt, kdf);
 
           try {
             const verified = await decryptData(
               data.vaultVerifier.ciphertextHex,
               data.vaultVerifier.ivHex,
-              key
+              key,
             );
             if (verified !== "VAULT_VERIFIER_OK") {
               throw new Error("密码错误");
@@ -175,6 +277,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             throw new Error("密码不正确，请重新输入");
           }
 
+          key = await migrateVaultKdfIfNeeded(password, key, data);
           sessionKey = key;
           sendResponse({ success: true });
           break;
@@ -193,7 +296,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             throw new Error("保险库未解锁");
           }
 
-          const { entries = [] } = (await chrome.storage.local.get("entries")) as VaultStorageSchema;
+          const { entries = [] } = (await chrome.storage.local.get(
+            "entries",
+          )) as VaultStorageSchema;
           const decryptedEntries = [];
 
           for (const item of entries) {
@@ -226,19 +331,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           if (!keyToUse && masterPassword) {
             const data: VaultStorageSchema = await chrome.storage.local.get([
               "vaultSaltHex",
+              "vaultKdf",
               "vaultVerifier",
+              "entries",
             ]);
             if (data.vaultSaltHex && data.vaultVerifier) {
-              const salt = new Uint8Array(
-                data.vaultSaltHex.match(/.{1,2}/g)!.map((b) => parseInt(b, 16))
-              );
-              const derived = await deriveKeyFromPassword(masterPassword, salt);
+              const salt = hexToBytes(data.vaultSaltHex);
+              const kdf = normalizeExtensionKdfParams(data.vaultKdf);
+              let derived = await deriveKeyFromPassword(masterPassword, salt, kdf);
               const verified = await decryptData(
                 data.vaultVerifier.ciphertextHex,
                 data.vaultVerifier.ivHex,
-                derived
+                derived,
               );
               if (verified === "VAULT_VERIFIER_OK") {
+                derived = await migrateVaultKdfIfNeeded(masterPassword, derived, data);
                 keyToUse = derived;
                 sessionKey = derived;
               }
@@ -250,10 +357,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }
 
           const enc = await encryptData(JSON.stringify(payload), keyToUse);
-          const { entries = [] } = (await chrome.storage.local.get("entries")) as VaultStorageSchema;
+          const { entries = [] } = (await chrome.storage.local.get(
+            "entries",
+          )) as VaultStorageSchema;
 
           const newEntry = {
-            id: "entry_" + Date.now() + "_" + Math.random().toString(36).substring(2, 8),
+            id: `entry_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
             ciphertextHex: enc.ciphertextHex,
             ivHex: enc.ivHex,
             createdAt: Date.now(),
@@ -273,7 +382,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // 10. 删除单个 2FA 账号
         case "DELETE_ENTRY": {
           const { id } = message;
-          const { entries = [] } = (await chrome.storage.local.get("entries")) as VaultStorageSchema;
+          const { entries = [] } = (await chrome.storage.local.get(
+            "entries",
+          )) as VaultStorageSchema;
           const filtered = entries.filter((e) => e.id !== id);
           await chrome.storage.local.set({ entries: filtered });
           sendResponse({ success: true });
@@ -281,11 +392,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         default:
-          sendResponse({ error: "Unknown message type: " + message.type });
+          sendResponse({ error: `Unknown message type: ${message.type}` });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Background error on", message.type, err);
-      sendResponse({ success: false, error: err.message || String(err) });
+      sendResponse({ success: false, error: err instanceof Error ? err.message : String(err) });
     }
   })();
 

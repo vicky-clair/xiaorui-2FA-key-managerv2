@@ -5,7 +5,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "prebuild": "bun --cwd ../expo run expo export --platform web",
+    "prebuild": "bun --cwd ../expo expo export --platform web",
     "build": "electron-builder build --win --dir",
     "build:exe": "electron-builder build --win nsis portable",
     "build:msix": "electron-builder build --win appx"
@@ -16,11 +16,7 @@
     "directories": {
       "output": "release"
     },
-    "files": [
-      "main.js",
-      "package.json",
-      "../expo/dist/**/*"
-    ],
+    "files": ["main.js", "package.json", "../expo/dist/**/*"],
     "extraResources": [
       {
         "from": "../expo/dist",
@@ -28,11 +24,7 @@
       }
     ],
     "win": {
-      "target": [
-        "nsis",
-        "portable",
-        "appx"
-      ]
+      "target": ["nsis", "portable", "appx"]
     },
     "nsis": {
       "oneClick": false,
@@ -49,7 +41,8 @@
     }
   },
   "devDependencies": {
-    "electron": "^32.0.0",
-    "electron-builder": "^25.0.0"
+    "electron": "^39.8.1",
+    "electron-builder": "^26.15.0",
+    "electron-builder-squirrel-windows": "^26.15.3"
   }
 }

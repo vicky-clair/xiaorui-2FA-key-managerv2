@@ -46,6 +46,98 @@ export interface ParsedOtpAuth {
   rawUri: string;
 }
 
+const MIN_OTP_DIGITS = 6;
+const MAX_OTP_DIGITS = 8;
+const MIN_OTP_PERIOD_SECONDS = 10;
+const MAX_OTP_PERIOD_SECONDS = 300;
+
+export const EXTENSION_KDF_NAME = "PBKDF2-SHA256";
+export const EXTENSION_KDF_ITERATIONS = 600000;
+export const LEGACY_EXTENSION_KDF_ITERATIONS = 100000;
+
+export interface ExtensionKdfParams {
+  name: typeof EXTENSION_KDF_NAME;
+  iterations: number;
+}
+
+export function getDefaultExtensionKdfParams(): ExtensionKdfParams {
+  return {
+    name: EXTENSION_KDF_NAME,
+    iterations: EXTENSION_KDF_ITERATIONS,
+  };
+}
+
+export function getLegacyExtensionKdfParams(): ExtensionKdfParams {
+  return {
+    name: EXTENSION_KDF_NAME,
+    iterations: LEGACY_EXTENSION_KDF_ITERATIONS,
+  };
+}
+
+export function normalizeExtensionKdfParams(
+  params?: Partial<ExtensionKdfParams>,
+): ExtensionKdfParams {
+  const iterations = params?.iterations ?? LEGACY_EXTENSION_KDF_ITERATIONS;
+  if (params?.name && params.name !== EXTENSION_KDF_NAME) {
+    throw new Error("不支持的扩展保险库 KDF 参数");
+  }
+  if (
+    !Number.isInteger(iterations) ||
+    iterations < LEGACY_EXTENSION_KDF_ITERATIONS ||
+    iterations > EXTENSION_KDF_ITERATIONS
+  ) {
+    throw new Error("扩展保险库 KDF 参数超出安全范围");
+  }
+  return {
+    name: EXTENSION_KDF_NAME,
+    iterations,
+  };
+}
+
+export function isLegacyExtensionKdfParams(params: ExtensionKdfParams): boolean {
+  return params.iterations < EXTENSION_KDF_ITERATIONS;
+}
+
+function validateOtpDigits(digits: number): number {
+  if (!Number.isInteger(digits) || digits < MIN_OTP_DIGITS || digits > MAX_OTP_DIGITS) {
+    throw new Error("OTP 位数必须是 6 到 8 之间的整数");
+  }
+  return digits;
+}
+
+function validateOtpPeriod(period: number): number {
+  if (
+    !Number.isInteger(period) ||
+    period < MIN_OTP_PERIOD_SECONDS ||
+    period > MAX_OTP_PERIOD_SECONDS
+  ) {
+    throw new Error("TOTP 周期必须是 10 到 300 秒之间的整数");
+  }
+  return period;
+}
+
+function validateHotpCounter(counter: number): number {
+  if (!Number.isSafeInteger(counter) || counter < 0) {
+    throw new Error("HOTP 计数器必须是非负安全整数");
+  }
+  return counter;
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return new Uint8Array(bytes).buffer;
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  if (!/^[0-9a-f]+$/i.test(hex) || hex.length % 2 !== 0) {
+    throw new Error("无效的十六进制编码");
+  }
+  const pairs = hex.match(/.{1,2}/g);
+  if (!pairs) {
+    throw new Error("无效的十六进制编码");
+  }
+  return new Uint8Array(pairs.map((byte) => Number.parseInt(byte, 16)));
+}
+
 export function parseOtpAuthUri(uri: string): ParsedOtpAuth {
   let cleanUri = uri.trim();
   if (cleanUri.includes("?uri=")) {
@@ -56,7 +148,10 @@ export function parseOtpAuthUri(uri: string): ParsedOtpAuth {
     cleanUri = decodeURIComponent(cleanUri);
   }
 
-  if (!cleanUri.toLowerCase().startsWith("otpauth://") && !cleanUri.toLowerCase().startsWith("otpauth:/")) {
+  if (
+    !cleanUri.toLowerCase().startsWith("otpauth://") &&
+    !cleanUri.toLowerCase().startsWith("otpauth:/")
+  ) {
     throw new Error("不是有效的 otpauth 链接");
   }
 
@@ -110,7 +205,7 @@ export function parseOtpAuthUri(uri: string): ParsedOtpAuth {
   }
 
   const queryIssuer = searchParams.get("issuer");
-  const finalIssuer = queryIssuer ? queryIssuer.trim() : (labelIssuer || "2FA Service");
+  const finalIssuer = queryIssuer ? queryIssuer.trim() : labelIssuer || "2FA Service";
   const finalAccount = labelAccount || finalIssuer;
 
   const rawAlgo = (searchParams.get("algorithm") || "SHA1").toUpperCase();
@@ -118,10 +213,10 @@ export function parseOtpAuthUri(uri: string): ParsedOtpAuth {
   if (rawAlgo === "SHA256" || rawAlgo === "SHA-256") algorithm = "SHA-256";
   if (rawAlgo === "SHA512" || rawAlgo === "SHA-512") algorithm = "SHA-512";
 
-  const digits = parseInt(searchParams.get("digits") || "6", 10);
-  const period = parseInt(searchParams.get("period") || "30", 10);
+  const digits = validateOtpDigits(Number.parseInt(searchParams.get("digits") || "6", 10));
+  const period = validateOtpPeriod(Number.parseInt(searchParams.get("period") || "30", 10));
   const counterStr = searchParams.get("counter");
-  const counter = counterStr ? parseInt(counterStr, 10) : undefined;
+  const counter = counterStr ? validateHotpCounter(Number.parseInt(counterStr, 10)) : undefined;
 
   return {
     type,
@@ -129,8 +224,8 @@ export function parseOtpAuthUri(uri: string): ParsedOtpAuth {
     account: finalAccount,
     secret: secret.replace(/[\s\-_=]/g, "").toUpperCase(),
     algorithm,
-    digits: isNaN(digits) ? 6 : digits,
-    period: isNaN(period) ? 30 : period,
+    digits,
+    period,
     counter,
     rawUri: cleanUri,
   };
@@ -158,11 +253,11 @@ export async function generateTOTP(
     digits?: number;
     period?: number;
     timestamp?: number;
-  }
+  },
 ): Promise<{ code: string; remainingSeconds: number; progress: number }> {
   const algorithm = options?.algorithm || "SHA-1";
-  const digits = options?.digits || 6;
-  const period = options?.period || 30;
+  const digits = validateOtpDigits(options?.digits || 6);
+  const period = validateOtpPeriod(options?.period || 30);
   const now = options?.timestamp || Date.now();
 
   const epochSeconds = Math.floor(now / 1000);
@@ -174,10 +269,10 @@ export async function generateTOTP(
 
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
-    keyBytes as any as BufferSource,
+    toArrayBuffer(keyBytes),
     { name: "HMAC", hash: { name: algorithm } },
     false,
-    ["sign"]
+    ["sign"],
   );
 
   // Time buffer: 8 bytes big endian
@@ -195,44 +290,53 @@ export async function generateTOTP(
     ((hmacBytes[offset + 2] & 0xff) << 8) |
     (hmacBytes[offset + 3] & 0xff);
 
-  const otp = binary % Math.pow(10, digits);
+  const otp = binary % 10 ** digits;
   const code = String(otp).padStart(digits, "0");
 
   return { code, remainingSeconds, progress };
 }
 
 // AES-256-GCM 加解密工具
-export async function deriveKeyFromPassword(password: string, salt: Uint8Array): Promise<CryptoKey> {
+export async function deriveKeyFromPassword(
+  password: string,
+  salt: Uint8Array,
+  params: ExtensionKdfParams = getDefaultExtensionKdfParams(),
+): Promise<CryptoKey> {
+  const safeParams = normalizeExtensionKdfParams(params);
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
     "raw",
-    enc.encode(password) as any as BufferSource,
+    toArrayBuffer(enc.encode(password)),
     { name: "PBKDF2" },
     false,
-    ["deriveKey"]
+    ["deriveKey"],
   );
 
   return crypto.subtle.deriveKey(
     {
       name: "PBKDF2",
-      salt: salt as any as BufferSource,
-      iterations: 100000,
+      salt: toArrayBuffer(salt),
+      iterations: safeParams.iterations,
       hash: "SHA-256",
     },
     keyMaterial,
     { name: "AES-GCM", length: 256 },
     false,
-    ["encrypt", "decrypt"]
+    ["encrypt", "decrypt"],
   );
 }
 
-export async function encryptData(plaintext: string, key: CryptoKey): Promise<{ ciphertextHex: string; ivHex: string }> {
+export async function encryptData(
+  plaintext: string,
+  key: CryptoKey,
+): Promise<{ ciphertextHex: string; ivHex: string }> {
   const enc = new TextEncoder();
   const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encodedPlaintext = enc.encode(plaintext);
   const encrypted = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv: iv as any as BufferSource },
+    { name: "AES-GCM", iv: toArrayBuffer(iv) },
     key,
-    enc.encode(plaintext) as any as BufferSource
+    toArrayBuffer(encodedPlaintext),
   );
 
   const ciphertextHex = Array.from(new Uint8Array(encrypted))
@@ -245,14 +349,18 @@ export async function encryptData(plaintext: string, key: CryptoKey): Promise<{ 
   return { ciphertextHex, ivHex };
 }
 
-export async function decryptData(ciphertextHex: string, ivHex: string, key: CryptoKey): Promise<string> {
-  const ciphertext = new Uint8Array(ciphertextHex.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16)));
-  const iv = new Uint8Array(ivHex.match(/.{1,2}/g)!.map((byte) => parseInt(byte, 16)));
+export async function decryptData(
+  ciphertextHex: string,
+  ivHex: string,
+  key: CryptoKey,
+): Promise<string> {
+  const ciphertext = hexToBytes(ciphertextHex);
+  const iv = hexToBytes(ivHex);
 
   const decrypted = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: iv as any as BufferSource },
+    { name: "AES-GCM", iv: toArrayBuffer(iv) },
     key,
-    ciphertext as any as BufferSource
+    toArrayBuffer(ciphertext),
   );
 
   const dec = new TextDecoder();

@@ -10,6 +10,10 @@ const ALGORITHM = "AES-GCM";
 const IV_LENGTH = 12; // GCM 标准初始化向量长度：96 位 (12 字节)
 const AUTH_TAG_LENGTH = 16; // GCM 认证标签长度：128 位 (16 字节)
 
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return new Uint8Array(bytes).buffer;
+}
+
 /**
  * 加密数据通用载荷结构 (密文 + 随机向量 + 认证标签)
  */
@@ -25,10 +29,10 @@ export interface EncryptedData {
 async function importKey(key: Uint8Array): Promise<CryptoKey> {
   return await globalThis.crypto.subtle.importKey(
     "raw",
-    key as any as BufferSource,
+    toArrayBuffer(key),
     { name: ALGORITHM },
     false,
-    ["encrypt", "decrypt"]
+    ["encrypt", "decrypt"],
   );
 }
 
@@ -51,11 +55,11 @@ export async function encryptAES256GCM(plaintext: string, key: Uint8Array): Prom
   const ciphertextWithTagBuffer = await globalThis.crypto.subtle.encrypt(
     {
       name: ALGORITHM,
-      iv: nonce as any as BufferSource,
+      iv: toArrayBuffer(nonce),
       tagLength: AUTH_TAG_LENGTH * 8, // 128 位认证标签
     },
     cryptoKey,
-    encodedPlaintext as any as BufferSource
+    toArrayBuffer(encodedPlaintext),
   );
 
   const ciphertextWithTag = new Uint8Array(ciphertextWithTagBuffer);
@@ -95,11 +99,11 @@ export async function decryptAES256GCM(data: EncryptedData, key: Uint8Array): Pr
   const decryptedBuffer = await globalThis.crypto.subtle.decrypt(
     {
       name: ALGORITHM,
-      iv: nonce as any as BufferSource,
+      iv: toArrayBuffer(nonce),
       tagLength: AUTH_TAG_LENGTH * 8,
     },
     cryptoKey,
-    ciphertextWithTag as any as BufferSource
+    toArrayBuffer(ciphertextWithTag),
   );
 
   return new TextDecoder().decode(decryptedBuffer);

@@ -35,7 +35,7 @@
 | 审查维度 | Edge 扩展政策要求 | 本项目实现情况 | 结论 |
 | :--- | :--- | :--- | :---: |
 | **单一用途原则 (Single Purpose)** | 扩展必须聚焦明确的单一功能，不得捆绑无关功能 | 专注于网页 2FA 绑定二维码的智能识别与拉起客户端导入 | **合格** |
-| **权限最小化原则 (Least Privilege)** | 申报的权限必须在功能中实际使用并具备正当理由 | 仅申报 `storage`、`activeTab`、`scripting`、`contextMenus` 与 `<all_urls>`（用于 2FA 检测） | **合格** |
+| **权限最小化原则 (Least Privilege)** | 申报的权限必须在功能中实际使用并具备正当理由 | 仅申报 `storage`、`activeTab`、`scripting`、`contextMenus`，页面匹配范围限制为 `http://*/*` 与 `https://*/*` | **合格** |
 | **现代架构规范 (Manifest V3)** | 推荐并优先支持标准的 Manifest V3 架构 | 全面基于 Manifest V3 构建，配置了标准 Service Worker 与 Content Scripts | **合格** |
 | **跨域与数据安全** | 严禁将网页抓取的图片数据发送至外部不可信服务器 | 采用 `jsQR` 在前端离线解码，图片像素不外传，100% 内存即时销毁 | **合格** |
 
@@ -87,8 +87,8 @@
 ### 1. 打包扩展为 ZIP 文件
 在项目根目录运行以下一键打包脚本，生成标准的提审压缩包：
 ```bash
-# 确保编译产物为最新版本
-bun run build:extension
+# 编译插件并生成商店上传 ZIP
+bun run package:extension-zip
 ```
 提审的 ZIP 文件应包含：
 - `manifest.json`
@@ -109,7 +109,7 @@ bun run build:extension
    - **Logo 图标**：上传 `icon-300.png` (300x300) 或 `icon-128.png`；
    - **展示截图**：上传 1~3 张 1280x800 的功能截图（展示悬浮卡片拉起客户端与动态口令倒计时列表）；
 5. **权限使用正当性说明 (Justification)**：
-   - 针对 `<all_urls>`：`Required to detect and parse 2FA/TOTP setup QR codes across authentication setup web pages for seamless one-click import into the vault.`
+   - 针对 `http://*/*` 与 `https://*/*`：`Required to detect and parse 2FA/TOTP setup QR codes across standard web authentication setup pages for seamless one-click import into the vault.`
    - 针对 `storage`：`Used to store user preferences and encrypted authentication records locally.`
 6. **点击「Publish」（发布）**：
    - Edge 审核一般耗时 **1~3 个工作日**。
@@ -159,7 +159,7 @@ Xiaorui 2FA Security Vault 是一款企业级高安全性、纯本地优先（Lo
 ## 六、常见审核驳回原因与规避方案 (Troubleshooting)
 
 1. **驳回原因 1：权限声明理由不充分 (Insufficient Justification)**
-   - *规避方案*：在 Edge Add-ons 提交时，明确声明 `<all_urls>` 和 `scripting` 仅在检测到网页中存在标准 `otpauth://` 二维码时用于本地解析，**绝无任何网络外发行为**。
+   - *规避方案*：在 Edge Add-ons 提交时，明确声明 `http://*/*`、`https://*/*` 和 `scripting` 仅在检测到网页中存在标准 `otpauth://` 二维码时用于本地解析，**绝无任何网络外发行为**。
 2. **驳回原因 2：缺少有效的隐私政策链接 (Missing Privacy Policy URL)**
    - *规避方案*：在 Partner Center 必须填入公开可访问的隐私政策网址（例如您的 GitHub 仓库 `SECURITY.md` 页面：`https://github.com/vicky-clair/xiaorui-2FA-key-managerv2/blob/main/SECURITY.md`）。
 3. **驳回原因 3：功能测试受阻（需要登录凭据）**

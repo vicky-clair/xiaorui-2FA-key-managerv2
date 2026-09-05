@@ -17,6 +17,19 @@
     "lineEnding": "lf",
     "lineWidth": 100
   },
+  "files": {
+    "ignore": [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/release/**",
+      "**/build/**",
+      "**/.expo/**",
+      "**/expo-env.d.ts",
+      "apps/browser-extension/background.js",
+      "apps/browser-extension/content.js",
+      "apps/browser-extension/popup/popup.js"
+    ]
+  },
   "javascript": {
     "formatter": {
       "quoteStyle": "double",

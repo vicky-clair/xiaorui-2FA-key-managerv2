@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   Modal,
@@ -7,19 +8,25 @@ import {
   ScrollView,
   StyleSheet,
   TextInput,
+  type TextStyle,
   View,
+  type ViewStyle,
   useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useTranslation } from "react-i18next";
 
 import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useThemePreference } from "@/providers/ThemePreferenceProvider";
 
+import { useDatabase } from "@/providers/DatabaseProvider";
 // Import core crypto, services and storage
 import {
+  type BackupEntryItem,
+  type EntryPayload,
+  type OTPAlgorithm,
+  type VaultMetadata,
   base32ToUint8Array,
   createEncryptedBackup,
   createEncryptedEntry,
@@ -33,19 +40,20 @@ import {
   restoreEncryptedBackup,
   unlockVault as unlockVaultCore,
   wipeBytes,
-  type BackupEntryItem,
-  type EntryPayload,
-  type OTPAlgorithm,
-  type VaultMetadata,
 } from "@sa/core";
-import {
-  AuthenticatorEntryRepository,
-  VaultRepository,
-  createDatabase,
-} from "@sa/storage";
-import { useDatabase } from "@/providers/DatabaseProvider";
+import { AuthenticatorEntryRepository, VaultRepository, createDatabase } from "@sa/storage";
 
 type AppState = "loading" | "setup" | "unlock" | "dashboard";
+type WebCompatibleStyle = TextStyle &
+  ViewStyle & {
+    cursor?: "pointer";
+    outlineStyle?: "none";
+  };
+
+interface DeepLinkWindow extends Window {
+  __onDeepLink?: (uri: string) => void;
+  __pendingDeepLinkUri?: string | null;
+}
 
 interface DisplayEntry {
   id: string;
@@ -86,7 +94,7 @@ function formatAddedDate(isoString?: string): string {
   if (!isoString) return "";
   try {
     const d = new Date(isoString);
-    if (isNaN(d.getTime())) return "";
+    if (Number.isNaN(d.getTime())) return "";
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, "0");
     const day = String(d.getDate()).padStart(2, "0");
@@ -122,7 +130,10 @@ function downloadBackupBlob(content: string, filename: string) {
  * - 10% - 25%: Warm Amber Yellow 🟡 (#f59e0b)
  * - < 10% (last 3-5s): Alert Crimson Red 🔴 (#ef4444)
  */
-function getProgressColor(remainingSeconds: number, period: number = 30): {
+function getProgressColor(
+  remainingSeconds: number,
+  period = 30,
+): {
   barColor: string;
   glowColor: string;
   textColor: string;
@@ -138,7 +149,8 @@ function getProgressColor(remainingSeconds: number, period: number = 30): {
       badgeBg: "rgba(16, 185, 129, 0.12)",
       badgeBorder: "rgba(16, 185, 129, 0.3)",
     };
-  } else if (percentage >= 25) {
+  }
+  if (percentage >= 25) {
     return {
       barColor: "#3b82f6",
       glowColor: "rgba(59, 130, 246, 0.4)",
@@ -146,7 +158,8 @@ function getProgressColor(remainingSeconds: number, period: number = 30): {
       badgeBg: "rgba(59, 130, 246, 0.12)",
       badgeBorder: "rgba(59, 130, 246, 0.3)",
     };
-  } else if (percentage >= 10) {
+  }
+  if (percentage >= 10) {
     return {
       barColor: "#f59e0b",
       glowColor: "rgba(245, 158, 11, 0.4)",
@@ -154,15 +167,14 @@ function getProgressColor(remainingSeconds: number, period: number = 30): {
       badgeBg: "rgba(245, 158, 11, 0.14)",
       badgeBorder: "rgba(245, 158, 11, 0.35)",
     };
-  } else {
-    return {
-      barColor: "#ef4444",
-      glowColor: "rgba(239, 68, 68, 0.5)",
-      textColor: "#ef4444",
-      badgeBg: "rgba(239, 68, 68, 0.16)",
-      badgeBorder: "rgba(239, 68, 68, 0.4)",
-    };
   }
+  return {
+    barColor: "#ef4444",
+    glowColor: "rgba(239, 68, 68, 0.5)",
+    textColor: "#ef4444",
+    badgeBg: "rgba(239, 68, 68, 0.16)",
+    badgeBorder: "rgba(239, 68, 68, 0.4)",
+  };
 }
 
 export default function HomeScreen() {
@@ -194,7 +206,10 @@ export default function HomeScreen() {
   const [isProUser, setIsProUser] = useState<boolean>(() => defaultEntitlementService.isPro());
   const [showProModal, setShowProModal] = useState(false);
   const [licenseInput, setLicenseInput] = useState("");
-  const [proModalMsg, setProModalMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [proModalMsg, setProModalMsg] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
   // Export Backup State (Pro Only)
   const [showExportModal, setShowExportModal] = useState(false);
@@ -217,7 +232,7 @@ export default function HomeScreen() {
     try {
       if (typeof window !== "undefined" && window.localStorage) {
         const val = window.localStorage.getItem("sa_autolock_minutes");
-        if (val !== null) return parseInt(val, 10);
+        if (val !== null) return Number.parseInt(val, 10);
       }
     } catch {}
     return 5; // Default 5 minutes
@@ -233,19 +248,36 @@ export default function HomeScreen() {
   // Auto-lock timer ref
   const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastCopiedCodeRef = useRef<string | null>(null);
+  const entriesRef = useRef<DisplayEntry[]>([]);
 
   const { isInitialized, error: dbError } = useDatabase();
 
-  const resetInactivityTimer = () => {
+  const handleLockVault = useCallback(() => {
+    if (vaultKey) {
+      wipeBytes(vaultKey);
+    }
+    setVaultKey(null);
+    setEntries([]);
+    setPassword("");
+    setConfirmPassword("");
+    setFormError(null);
+    setSearchQuery("");
+    setAppState("unlock");
+  }, [vaultKey]);
+
+  const resetInactivityTimer = useCallback(() => {
     if (inactivityTimerRef.current) {
       clearTimeout(inactivityTimerRef.current);
     }
     if (appState === "dashboard" && vaultKey && autoLockMinutes > 0) {
-      inactivityTimerRef.current = setTimeout(() => {
-        handleLockVault();
-      }, autoLockMinutes * 60 * 1000);
+      inactivityTimerRef.current = setTimeout(
+        () => {
+          handleLockVault();
+        },
+        autoLockMinutes * 60 * 1000,
+      );
     }
-  };
+  }, [appState, autoLockMinutes, handleLockVault, vaultKey]);
 
   // Global activity listener for desktop mouse / keyboard / touch
   useEffect(() => {
@@ -277,11 +309,11 @@ export default function HomeScreen() {
         window.removeEventListener("scroll", handleUserActivity);
       }
     };
-  }, [appState, vaultKey, autoLockMinutes]);
+  }, [appState, vaultKey, autoLockMinutes, resetInactivityTimer]);
 
   const pendingDeepLinkUriRef = useRef<string | null>(null);
 
-  const triggerImportFromUri = (rawUri: string) => {
+  const triggerImportFromUri = useCallback((rawUri: string) => {
     try {
       let target = rawUri.trim();
       if (target.includes("?uri=")) {
@@ -305,10 +337,11 @@ export default function HomeScreen() {
       setAddModalError(null);
       setShowAddModal(true);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
+      const deepLinkWindow = window as DeepLinkWindow;
       const handleUri = (uri: string) => {
         if (appState === "dashboard" && vaultKey) {
           triggerImportFromUri(uri);
@@ -317,13 +350,13 @@ export default function HomeScreen() {
         }
       };
 
-      (window as any).__onDeepLink = handleUri;
-      if ((window as any).__pendingDeepLinkUri) {
-        handleUri((window as any).__pendingDeepLinkUri);
-        (window as any).__pendingDeepLinkUri = null;
+      deepLinkWindow.__onDeepLink = handleUri;
+      if (deepLinkWindow.__pendingDeepLinkUri) {
+        handleUri(deepLinkWindow.__pendingDeepLinkUri);
+        deepLinkWindow.__pendingDeepLinkUri = null;
       }
     }
-  }, [appState, vaultKey]);
+  }, [appState, vaultKey, triggerImportFromUri]);
 
   useEffect(() => {
     if (isInitialized) {
@@ -331,21 +364,28 @@ export default function HomeScreen() {
     }
   }, [isInitialized]);
 
+  useEffect(() => {
+    entriesRef.current = entries;
+  }, [entries]);
+
   // Real-time TOTP clock update effect
   useEffect(() => {
-    if (appState !== "dashboard" || !vaultKey || entries.length === 0) return;
+    if (appState !== "dashboard" || !vaultKey) return;
 
     const interval = setInterval(async () => {
+      const currentEntries = entriesRef.current;
+      if (currentEntries.length === 0) return;
+
       const now = Date.now();
       const updated = await Promise.all(
-        entries.map(async (item) => {
+        currentEntries.map(async (item) => {
           try {
             const code = await generateTOTP(
               item.payload.secret,
               now,
               item.payload.period || 30,
               item.payload.digits || 6,
-              item.payload.algorithm || "SHA1"
+              item.payload.algorithm || "SHA1",
             );
             const remaining = getRemainingSeconds(item.payload.period || 30, now);
             const progress = getPeriodProgress(item.payload.period || 30, now);
@@ -358,13 +398,13 @@ export default function HomeScreen() {
           } catch {
             return item;
           }
-        })
+        }),
       );
       setEntries(updated);
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [appState, vaultKey, entries.length]);
+  }, [appState, vaultKey]);
 
   // Filter entries based on search query
   const filteredEntries = useMemo(() => {
@@ -372,8 +412,7 @@ export default function HomeScreen() {
     const q = searchQuery.toLowerCase().trim();
     return entries.filter(
       (e) =>
-        e.payload.issuer.toLowerCase().includes(q) ||
-        (e.payload.account && e.payload.account.toLowerCase().includes(q))
+        e.payload.issuer.toLowerCase().includes(q) || e.payload.account?.toLowerCase().includes(q),
     );
   }, [entries, searchQuery]);
 
@@ -416,7 +455,7 @@ export default function HomeScreen() {
             now,
             payload.period || 30,
             payload.digits || 6,
-            payload.algorithm || "SHA1"
+            payload.algorithm || "SHA1",
           );
           const remaining = getRemainingSeconds(payload.period || 30, now);
           const progress = getPeriodProgress(payload.period || 30, now);
@@ -531,19 +570,6 @@ export default function HomeScreen() {
     }
   };
 
-  const handleLockVault = () => {
-    if (vaultKey) {
-      wipeBytes(vaultKey);
-    }
-    setVaultKey(null);
-    setEntries([]);
-    setPassword("");
-    setConfirmPassword("");
-    setFormError(null);
-    setSearchQuery("");
-    setAppState("unlock");
-  };
-
   const handleChangeAutoLockTime = (minutes: number) => {
     setAutoLockMinutes(minutes);
     try {
@@ -597,7 +623,8 @@ export default function HomeScreen() {
         setAddModalError(err instanceof Error ? err.message : "无效的 otpauth 链接");
         return;
       }
-    } else if (rawInput.includes("secret=")) {
+    }
+    if (rawInput.includes("secret=")) {
       const match = rawInput.match(/secret=([A-Za-z0-9\-_=]+)/i);
       if (match) {
         finalSecret = match[1];
@@ -632,11 +659,7 @@ export default function HomeScreen() {
         period: finalPeriod,
       };
 
-      const encryptedRecord = await createEncryptedEntry(
-        payload,
-        activeVault.id,
-        vaultKey
-      );
+      const encryptedRecord = await createEncryptedEntry(payload, activeVault.id, vaultKey);
 
       const db = await createDatabase();
       const entryRepo = new AuthenticatorEntryRepository(db);
@@ -767,7 +790,7 @@ export default function HomeScreen() {
       const savContent = await createEncryptedBackup(
         backupItems,
         trimmedPwd,
-        activeVault?.name || "My Vault"
+        activeVault?.name || "My Vault",
       );
 
       const now = new Date();
@@ -793,8 +816,9 @@ export default function HomeScreen() {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".sav,.json,text/plain";
-    input.onchange = async (e: any) => {
-      const file = e.target.files?.[0];
+    input.onchange = async (e: Event) => {
+      const target = e.target as HTMLInputElement | null;
+      const file = target?.files?.[0];
       if (file) {
         const text = await file.text();
         setImportFileContent(text);
@@ -837,7 +861,9 @@ export default function HomeScreen() {
       // Check entitlement limit if free
       const newTotal = entries.length + payload.entries.length;
       if (!defaultEntitlementService.isPro() && newTotal > 10) {
-        setImportError(`导入后总计 ${newTotal} 个账号，超过免费版 10 个上限，请先升级 Pro 商业版！`);
+        setImportError(
+          `导入后总计 ${newTotal} 个账号，超过免费版 10 个上限，请先升级 Pro 商业版！`,
+        );
         return;
       }
 
@@ -857,7 +883,7 @@ export default function HomeScreen() {
           },
           activeVault.id,
           vaultKey,
-          { favorite: item.favorite }
+          { favorite: item.favorite },
         );
         await entryRepo.createEntry(encryptedRecord);
       }
@@ -871,7 +897,9 @@ export default function HomeScreen() {
         setImportPassword("");
       }, 1800);
     } catch (err) {
-      setImportError(err instanceof Error ? err.message : "解密失败：备份保护密码不正确或文件已损坏");
+      setImportError(
+        err instanceof Error ? err.message : "解密失败：备份保护密码不正确或文件已损坏",
+      );
     } finally {
       setImporting(false);
     }
@@ -892,7 +920,7 @@ export default function HomeScreen() {
       color: theme.text,
       fontSize: 15,
       outlineStyle: "none",
-    } as any,
+    } as WebCompatibleStyle,
     searchInput: {
       flex: 1,
       height: 44,
@@ -905,7 +933,7 @@ export default function HomeScreen() {
       fontSize: 14,
       outlineStyle: "none",
       minWidth: 140,
-    } as any,
+    } as WebCompatibleStyle,
     modalInput: {
       height: 46,
       borderWidth: 1,
@@ -916,7 +944,7 @@ export default function HomeScreen() {
       color: theme.text,
       fontSize: 14,
       outlineStyle: "none",
-    } as any,
+    } as WebCompatibleStyle,
     primaryButton: {
       height: 48,
       backgroundColor: "#2563eb",
@@ -929,7 +957,7 @@ export default function HomeScreen() {
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.25,
       shadowRadius: 8,
-    } as any,
+    } as WebCompatibleStyle,
     // Row 2 Primary Add Action Button
     addAccountBtn: {
       height: 44,
@@ -946,7 +974,7 @@ export default function HomeScreen() {
       shadowOpacity: 0.35,
       shadowRadius: 8,
       flexShrink: 0,
-    } as any,
+    } as WebCompatibleStyle,
     // Row 2 Action Bar Secondary Tool Buttons (Import / Export)
     actionToolBtn: {
       height: 44,
@@ -965,7 +993,7 @@ export default function HomeScreen() {
       shadowOffset: { width: 0, height: 1 },
       shadowOpacity: 0.05,
       shadowRadius: 3,
-    } as any,
+    } as WebCompatibleStyle,
     // Row 1 System Top Bar Pill Buttons
     headerBtnPro: {
       flexDirection: "row",
@@ -980,7 +1008,7 @@ export default function HomeScreen() {
       justifyContent: "center",
       cursor: "pointer",
       flexShrink: 0,
-    } as any,
+    } as WebCompatibleStyle,
     headerBtnPill: {
       flexDirection: "row",
       alignItems: "center",
@@ -994,7 +1022,7 @@ export default function HomeScreen() {
       justifyContent: "center",
       cursor: "pointer",
       flexShrink: 0,
-    } as any,
+    } as WebCompatibleStyle,
     headerBtnDanger: {
       flexDirection: "row",
       alignItems: "center",
@@ -1008,7 +1036,7 @@ export default function HomeScreen() {
       justifyContent: "center",
       cursor: "pointer",
       flexShrink: 0,
-    } as any,
+    } as WebCompatibleStyle,
     cardSurface: {
       backgroundColor: theme.card,
       borderWidth: 1,
@@ -1120,24 +1148,36 @@ export default function HomeScreen() {
               </View>
               <View style={styles.noticeList}>
                 <View style={styles.noticeItem}>
-                  <ThemedText style={{ fontSize: 12.5, lineHeight: 18, color: theme.textSecondary }}>
-                    <ThemedText style={{ fontWeight: "700", color: isDark ? "#93c5fd" : "#1d4ed8" }}>
+                  <ThemedText
+                    style={{ fontSize: 12.5, lineHeight: 18, color: theme.textSecondary }}
+                  >
+                    <ThemedText
+                      style={{ fontWeight: "700", color: isDark ? "#93c5fd" : "#1d4ed8" }}
+                    >
                       🔒 {t("noticeLocalTitle")}
                     </ThemedText>
                     {t("noticeLocalDesc")}
                   </ThemedText>
                 </View>
                 <View style={styles.noticeItem}>
-                  <ThemedText style={{ fontSize: 12.5, lineHeight: 18, color: theme.textSecondary }}>
-                    <ThemedText style={{ fontWeight: "700", color: isDark ? "#fca5a5" : "#dc2626" }}>
+                  <ThemedText
+                    style={{ fontSize: 12.5, lineHeight: 18, color: theme.textSecondary }}
+                  >
+                    <ThemedText
+                      style={{ fontWeight: "700", color: isDark ? "#fca5a5" : "#dc2626" }}
+                    >
                       ⚠️ {t("noticePasswordTitle")}
                     </ThemedText>
                     {t("noticePasswordDesc")}
                   </ThemedText>
                 </View>
                 <View style={styles.noticeItem}>
-                  <ThemedText style={{ fontSize: 12.5, lineHeight: 18, color: theme.textSecondary }}>
-                    <ThemedText style={{ fontWeight: "700", color: isDark ? "#fcd34d" : "#d97706" }}>
+                  <ThemedText
+                    style={{ fontSize: 12.5, lineHeight: 18, color: theme.textSecondary }}
+                  >
+                    <ThemedText
+                      style={{ fontWeight: "700", color: isDark ? "#fcd34d" : "#d97706" }}
+                    >
                       📦 {t("noticeBackupTitle")}
                     </ThemedText>
                     {t("noticeBackupDesc")}
@@ -1212,11 +1252,14 @@ export default function HomeScreen() {
 
               {/* Quick theme toggle on unlock screen */}
               <Pressable
-                style={[dynamicStyles.headerBtnPill, { alignSelf: "center", marginTop: Spacing.two }]}
+                style={[
+                  dynamicStyles.headerBtnPill,
+                  { alignSelf: "center", marginTop: Spacing.two },
+                ]}
                 onPress={toggleColorScheme}
               >
                 <ThemedText style={{ fontSize: 13, color: theme.textSecondary }}>
-                  {isDark ? "☀️ " + t("themeLight") : "🌙 " + t("themeDark")}
+                  {isDark ? `☀️ ${t("themeLight")}` : `🌙 ${t("themeDark")}`}
                 </ThemedText>
               </Pressable>
             </View>
@@ -1231,16 +1274,24 @@ export default function HomeScreen() {
               </View>
               <View style={styles.noticeList}>
                 <View style={styles.noticeItem}>
-                  <ThemedText style={{ fontSize: 12.5, lineHeight: 18, color: theme.textSecondary }}>
-                    <ThemedText style={{ fontWeight: "700", color: isDark ? "#93c5fd" : "#1d4ed8" }}>
+                  <ThemedText
+                    style={{ fontSize: 12.5, lineHeight: 18, color: theme.textSecondary }}
+                  >
+                    <ThemedText
+                      style={{ fontWeight: "700", color: isDark ? "#93c5fd" : "#1d4ed8" }}
+                    >
                       🔒 {t("noticeLocalTitle")}
                     </ThemedText>
                     {t("noticeLocalDesc")}
                   </ThemedText>
                 </View>
                 <View style={styles.noticeItem}>
-                  <ThemedText style={{ fontSize: 12.5, lineHeight: 18, color: theme.textSecondary }}>
-                    <ThemedText style={{ fontWeight: "700", color: isDark ? "#fcd34d" : "#d97706" }}>
+                  <ThemedText
+                    style={{ fontSize: 12.5, lineHeight: 18, color: theme.textSecondary }}
+                  >
+                    <ThemedText
+                      style={{ fontWeight: "700", color: isDark ? "#fcd34d" : "#d97706" }}
+                    >
                       📦 {t("noticeBackupTitle")}
                     </ThemedText>
                     {t("unlockBackupDesc")}
@@ -1268,7 +1319,9 @@ export default function HomeScreen() {
               <ThemedText style={{ fontSize: 18 }}>🛡️</ThemedText>
             </View>
             <View style={{ flexShrink: 1 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}
+              >
                 <ThemedText style={styles.brandTitle} numberOfLines={1}>
                   {t("vaultManager")}
                 </ThemedText>
@@ -1282,8 +1335,8 @@ export default function HomeScreen() {
                           ? "rgba(16, 185, 129, 0.2)"
                           : "#d1fae5"
                         : isDark
-                        ? "rgba(59, 130, 246, 0.2)"
-                        : "#dbeafe",
+                          ? "rgba(59, 130, 246, 0.2)"
+                          : "#dbeafe",
                     },
                   ]}
                 >
@@ -1299,7 +1352,9 @@ export default function HomeScreen() {
                 </Pressable>
               </View>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginTop: 1 }}>
-                <View style={[styles.statusDot, { backgroundColor: isProUser ? "#10b981" : "#3b82f6" }]} />
+                <View
+                  style={[styles.statusDot, { backgroundColor: isProUser ? "#10b981" : "#3b82f6" }]}
+                />
                 <ThemedText style={{ fontSize: 11, color: theme.textSecondary }} numberOfLines={1}>
                   {isProUser ? "无限账号 • 商业保护" : `${entries.length} / 10 账号`}
                 </ThemedText>
@@ -1311,10 +1366,7 @@ export default function HomeScreen() {
           <View style={styles.topActionsGroup}>
             {/* Pro Membership Button */}
             <Pressable
-              style={({ pressed }) => [
-                dynamicStyles.headerBtnPro,
-                pressed && { opacity: 0.75 },
-              ]}
+              style={({ pressed }) => [dynamicStyles.headerBtnPro, pressed && { opacity: 0.75 }]}
               onPress={() => {
                 resetInactivityTimer();
                 setProModalMsg(null);
@@ -1336,10 +1388,7 @@ export default function HomeScreen() {
 
             {/* Auto-Lock Indicator & Quick Settings Button */}
             <Pressable
-              style={({ pressed }) => [
-                dynamicStyles.headerBtnPill,
-                pressed && { opacity: 0.75 },
-              ]}
+              style={({ pressed }) => [dynamicStyles.headerBtnPill, pressed && { opacity: 0.75 }]}
               onPress={() => {
                 resetInactivityTimer();
                 setShowAutoLockModal(true);
@@ -1356,10 +1405,7 @@ export default function HomeScreen() {
 
             {/* Theme Toggle Button */}
             <Pressable
-              style={({ pressed }) => [
-                dynamicStyles.headerBtnPill,
-                pressed && { opacity: 0.7 },
-              ]}
+              style={({ pressed }) => [dynamicStyles.headerBtnPill, pressed && { opacity: 0.7 }]}
               onPress={toggleColorScheme}
               accessibilityLabel={isDark ? t("themeLight") : t("themeDark")}
             >
@@ -1368,10 +1414,7 @@ export default function HomeScreen() {
 
             {/* Lock Vault Button */}
             <Pressable
-              style={({ pressed }) => [
-                dynamicStyles.headerBtnDanger,
-                pressed && { opacity: 0.8 },
-              ]}
+              style={({ pressed }) => [dynamicStyles.headerBtnDanger, pressed && { opacity: 0.8 }]}
               onPress={handleLockVault}
               accessibilityLabel={t("lockVault")}
             >
@@ -1400,10 +1443,7 @@ export default function HomeScreen() {
           <View style={styles.businessButtonGroup}>
             {/* + 添加 2FA 主按钮 (醒目大号科技蓝) */}
             <Pressable
-              style={({ pressed }) => [
-                dynamicStyles.addAccountBtn,
-                pressed && { opacity: 0.8 },
-              ]}
+              style={({ pressed }) => [dynamicStyles.addAccountBtn, pressed && { opacity: 0.8 }]}
               onPress={() => {
                 resetInactivityTimer();
                 setAddModalError(null);
@@ -1419,10 +1459,7 @@ export default function HomeScreen() {
 
             {/* 📥 导入备份按钮 (高级磨砂商务灰/蓝) */}
             <Pressable
-              style={({ pressed }) => [
-                dynamicStyles.actionToolBtn,
-                pressed && { opacity: 0.75 },
-              ]}
+              style={({ pressed }) => [dynamicStyles.actionToolBtn, pressed && { opacity: 0.75 }]}
               onPress={() => {
                 resetInactivityTimer();
                 setImportError(null);
@@ -1443,8 +1480,18 @@ export default function HomeScreen() {
               style={({ pressed }) => [
                 dynamicStyles.actionToolBtn,
                 isProUser
-                  ? { borderColor: "rgba(16, 185, 129, 0.4)", backgroundColor: isDark ? "rgba(16, 185, 129, 0.1)" : "rgba(16, 185, 129, 0.06)" }
-                  : { borderColor: "rgba(245, 158, 11, 0.4)", backgroundColor: isDark ? "rgba(245, 158, 11, 0.1)" : "rgba(245, 158, 11, 0.06)" },
+                  ? {
+                      borderColor: "rgba(16, 185, 129, 0.4)",
+                      backgroundColor: isDark
+                        ? "rgba(16, 185, 129, 0.1)"
+                        : "rgba(16, 185, 129, 0.06)",
+                    }
+                  : {
+                      borderColor: "rgba(245, 158, 11, 0.4)",
+                      backgroundColor: isDark
+                        ? "rgba(245, 158, 11, 0.1)"
+                        : "rgba(245, 158, 11, 0.06)",
+                    },
                 pressed && { opacity: 0.75 },
               ]}
               onPress={handleOpenExportModal}
@@ -1474,11 +1521,20 @@ export default function HomeScreen() {
               <View style={styles.emptyIconBox}>
                 <ThemedText style={{ fontSize: 40 }}>🔐</ThemedText>
               </View>
-              <ThemedText type="subtitle" style={{ fontSize: 20, fontWeight: "700", textAlign: "center" }}>
+              <ThemedText
+                type="subtitle"
+                style={{ fontSize: 20, fontWeight: "700", textAlign: "center" }}
+              >
                 {t("emptyAccounts")}
               </ThemedText>
               <ThemedText
-                style={{ textAlign: "center", color: theme.textSecondary, lineHeight: 22, maxWidth: 440, fontSize: 14 }}
+                style={{
+                  textAlign: "center",
+                  color: theme.textSecondary,
+                  lineHeight: 22,
+                  maxWidth: 440,
+                  fontSize: 14,
+                }}
               >
                 {t("emptyAccountsDesc")}
               </ThemedText>
@@ -1502,7 +1558,9 @@ export default function HomeScreen() {
           ) : filteredEntries.length === 0 ? (
             <View style={[dynamicStyles.cardSurface, styles.emptyCard]}>
               <ThemedText style={{ fontSize: 28 }}>🔍</ThemedText>
-              <ThemedText style={{ color: theme.textSecondary, marginTop: Spacing.one, fontSize: 14 }}>
+              <ThemedText
+                style={{ color: theme.textSecondary, marginTop: Spacing.one, fontSize: 14 }}
+              >
                 {t("noSearchResult")}
               </ThemedText>
             </View>
@@ -1532,7 +1590,15 @@ export default function HomeScreen() {
                   >
                     {/* Layer 1: Card Top Header (Avatar + Service Name + Account + Added Timestamp + Delete) */}
                     <View style={styles.cardHeaderRow}>
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
+                      <View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 10,
+                          flex: 1,
+                          minWidth: 0,
+                        }}
+                      >
                         <View style={[styles.serviceAvatar, { backgroundColor: avatarGradStart }]}>
                           <ThemedText style={styles.serviceAvatarText}>{initialChar}</ThemedText>
                         </View>
@@ -1540,14 +1606,35 @@ export default function HomeScreen() {
                           <ThemedText style={styles.issuerName} numberOfLines={1}>
                             {item.payload.issuer}
                           </ThemedText>
-                          <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6, marginTop: 2 }}>
-                            {item.payload.account && item.payload.account !== item.payload.issuer ? (
-                              <ThemedText style={{ fontSize: 12, color: theme.textSecondary }} numberOfLines={1}>
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              flexWrap: "wrap",
+                              gap: 6,
+                              marginTop: 2,
+                            }}
+                          >
+                            {item.payload.account &&
+                            item.payload.account !== item.payload.issuer ? (
+                              <ThemedText
+                                style={{ fontSize: 12, color: theme.textSecondary }}
+                                numberOfLines={1}
+                              >
                                 {item.payload.account}
                               </ThemedText>
                             ) : null}
                             {addedDateFormatted ? (
-                              <View style={[styles.dateBadge, { backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)" }]}>
+                              <View
+                                style={[
+                                  styles.dateBadge,
+                                  {
+                                    backgroundColor: isDark
+                                      ? "rgba(255,255,255,0.06)"
+                                      : "rgba(0,0,0,0.04)",
+                                  },
+                                ]}
+                              >
                                 <ThemedText style={{ fontSize: 11, color: theme.textSecondary }}>
                                   🕒 {t("addedAt")}: {addedDateFormatted}
                                 </ThemedText>
@@ -1561,13 +1648,19 @@ export default function HomeScreen() {
                       <Pressable
                         style={({ pressed }) => [
                           styles.deleteBtn,
-                          { backgroundColor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)" },
+                          {
+                            backgroundColor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)",
+                          },
                           pressed && { opacity: 0.6 },
                         ]}
                         onPress={() => handleDeleteEntry(item.id)}
                         accessibilityLabel={t("delete")}
                       >
-                        <ThemedText style={{ color: theme.textDisabled, fontSize: 13, fontWeight: "700" }}>✕</ThemedText>
+                        <ThemedText
+                          style={{ color: theme.textDisabled, fontSize: 13, fontWeight: "700" }}
+                        >
+                          ✕
+                        </ThemedText>
                       </Pressable>
                     </View>
 
@@ -1576,8 +1669,12 @@ export default function HomeScreen() {
                       style={({ pressed }) => [
                         styles.digitsBoxWrapper,
                         {
-                          backgroundColor: isDark ? "rgba(10, 15, 29, 0.75)" : "rgba(248, 250, 252, 0.9)",
-                          borderColor: isDark ? "rgba(255, 255, 255, 0.08)" : "rgba(203, 213, 225, 0.8)",
+                          backgroundColor: isDark
+                            ? "rgba(10, 15, 29, 0.75)"
+                            : "rgba(248, 250, 252, 0.9)",
+                          borderColor: isDark
+                            ? "rgba(255, 255, 255, 0.08)"
+                            : "rgba(203, 213, 225, 0.8)",
                         },
                         pressed && { opacity: 0.85 },
                       ]}
@@ -1607,7 +1704,9 @@ export default function HomeScreen() {
                           </ThemedText>
                         </View>
 
-                        <ThemedText style={[styles.digitDivider, { color: colors.textColor }]}>•</ThemedText>
+                        <ThemedText style={[styles.digitDivider, { color: colors.textColor }]}>
+                          •
+                        </ThemedText>
 
                         <View
                           style={[
@@ -1638,7 +1737,16 @@ export default function HomeScreen() {
                     <View style={styles.cardControlsRow}>
                       {/* Fluid Progress Bar */}
                       <View style={styles.progressTrackWrapper}>
-                        <View style={[styles.progressBarTrack, { backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)" }]}>
+                        <View
+                          style={[
+                            styles.progressBarTrack,
+                            {
+                              backgroundColor: isDark
+                                ? "rgba(255,255,255,0.08)"
+                                : "rgba(0,0,0,0.06)",
+                            },
+                          ]}
+                        >
                           <View
                             style={[
                               styles.progressBarFill,
@@ -1663,8 +1771,11 @@ export default function HomeScreen() {
                         ]}
                       >
                         <ThemedText style={{ fontSize: 12 }}>⏱️</ThemedText>
-                        <ThemedText style={[styles.countdownText, { color: colors.textColor, fontSize: 12 }]}>
-                          {item.remainingSeconds}{t("remaining")}
+                        <ThemedText
+                          style={[styles.countdownText, { color: colors.textColor, fontSize: 12 }]}
+                        >
+                          {item.remainingSeconds}
+                          {t("remaining")}
                         </ThemedText>
                       </View>
 
@@ -1680,7 +1791,7 @@ export default function HomeScreen() {
                         onPress={() => handleCopyCode(item.id, item.totpCode)}
                       >
                         <ThemedText style={styles.copyButtonText}>
-                          {isCopied ? "✓ " + t("copied") : "📋 " + t("copy")}
+                          {isCopied ? `✓ ${t("copied")}` : `📋 ${t("copy")}`}
                         </ThemedText>
                       </Pressable>
                     </View>
@@ -1709,7 +1820,7 @@ export default function HomeScreen() {
                 </View>
                 <Pressable
                   onPress={() => setShowAutoLockModal(false)}
-                  style={{ padding: Spacing.one, cursor: "pointer" } as any}
+                  style={{ padding: Spacing.one, cursor: "pointer" } as WebCompatibleStyle}
                 >
                   <ThemedText style={{ fontSize: 18, color: theme.textSecondary }}>✕</ThemedText>
                 </Pressable>
@@ -1739,8 +1850,8 @@ export default function HomeScreen() {
                               ? "rgba(37, 99, 235, 0.2)"
                               : "#eff6ff"
                             : isDark
-                            ? "rgba(255, 255, 255, 0.04)"
-                            : "rgba(0, 0, 0, 0.02)",
+                              ? "rgba(255, 255, 255, 0.04)"
+                              : "rgba(0, 0, 0, 0.02)",
                           borderColor: isSelected ? "#2563eb" : theme.border,
                         },
                         pressed && { opacity: 0.8 },
@@ -1757,7 +1868,9 @@ export default function HomeScreen() {
                         {opt.label}
                       </ThemedText>
                       {isSelected && (
-                        <ThemedText style={{ fontSize: 16, color: "#2563eb", fontWeight: "800" }}>✓</ThemedText>
+                        <ThemedText style={{ fontSize: 16, color: "#2563eb", fontWeight: "800" }}>
+                          ✓
+                        </ThemedText>
                       )}
                     </Pressable>
                   );
@@ -1785,7 +1898,7 @@ export default function HomeScreen() {
                 </View>
                 <Pressable
                   onPress={() => setShowImportModal(false)}
-                  style={{ padding: Spacing.one, cursor: "pointer" } as any}
+                  style={{ padding: Spacing.one, cursor: "pointer" } as WebCompatibleStyle}
                 >
                   <ThemedText style={{ fontSize: 18, color: theme.textSecondary }}>✕</ThemedText>
                 </Pressable>
@@ -1797,7 +1910,13 @@ export default function HomeScreen() {
 
               {/* Select File / Paste File Content */}
               <View style={styles.formField}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
                   <ThemedText style={styles.formLabel}>备份文件内容 (.sav) *</ThemedText>
                   <Pressable
                     style={({ pressed }) => [
@@ -1813,7 +1932,10 @@ export default function HomeScreen() {
                 </View>
 
                 <TextInput
-                  style={[dynamicStyles.modalInput, { height: 72, textAlignVertical: "top", paddingTop: 8 }]}
+                  style={[
+                    dynamicStyles.modalInput,
+                    { height: 72, textAlignVertical: "top", paddingTop: 8 },
+                  ]}
                   placeholder={t("pasteBackupPlaceholder")}
                   placeholderTextColor={theme.textDisabled}
                   value={importFileContent}
@@ -1829,9 +1951,7 @@ export default function HomeScreen() {
 
               {/* Backup Decryption Password */}
               <View style={styles.formField}>
-                <ThemedText style={styles.formLabel}>
-                  备份保护密码 (Backup Password) *
-                </ThemedText>
+                <ThemedText style={styles.formLabel}>备份保护密码 (Backup Password) *</ThemedText>
                 <TextInput
                   style={dynamicStyles.modalInput}
                   placeholder={t("backupPasswordPlaceholder")}
@@ -1854,8 +1974,23 @@ export default function HomeScreen() {
               )}
 
               {importSuccessMsg && (
-                <View style={[styles.errorBox, { backgroundColor: "rgba(16, 185, 129, 0.12)", borderColor: "rgba(16, 185, 129, 0.3)" }]}>
-                  <ThemedText style={{ color: "#10b981", fontSize: 13, textAlign: "center", fontWeight: "700" }}>
+                <View
+                  style={[
+                    styles.errorBox,
+                    {
+                      backgroundColor: "rgba(16, 185, 129, 0.12)",
+                      borderColor: "rgba(16, 185, 129, 0.3)",
+                    },
+                  ]}
+                >
+                  <ThemedText
+                    style={{
+                      color: "#10b981",
+                      fontSize: 13,
+                      textAlign: "center",
+                      fontWeight: "700",
+                    }}
+                  >
                     ✓ {importSuccessMsg}
                   </ThemedText>
                 </View>
@@ -1863,10 +1998,7 @@ export default function HomeScreen() {
 
               <View style={styles.modalActionRow}>
                 <Pressable
-                  style={({ pressed }) => [
-                    styles.cancelBtn,
-                    pressed && { opacity: 0.7 },
-                  ]}
+                  style={({ pressed }) => [styles.cancelBtn, pressed && { opacity: 0.7 }]}
                   onPress={() => setShowImportModal(false)}
                 >
                   <ThemedText style={{ color: theme.textSecondary, fontWeight: "600" }}>
@@ -1914,7 +2046,7 @@ export default function HomeScreen() {
                 </View>
                 <Pressable
                   onPress={() => setShowExportModal(false)}
-                  style={{ padding: Spacing.one, cursor: "pointer" } as any}
+                  style={{ padding: Spacing.one, cursor: "pointer" } as WebCompatibleStyle}
                 >
                   <ThemedText style={{ fontSize: 18, color: theme.textSecondary }}>✕</ThemedText>
                 </Pressable>
@@ -1926,9 +2058,7 @@ export default function HomeScreen() {
 
               {/* Password Input 1 */}
               <View style={styles.formField}>
-                <ThemedText style={styles.formLabel}>
-                  {t("backupPassword")} *
-                </ThemedText>
+                <ThemedText style={styles.formLabel}>{t("backupPassword")} *</ThemedText>
                 <TextInput
                   style={dynamicStyles.modalInput}
                   placeholder={t("backupPasswordPlaceholder")}
@@ -1945,9 +2075,7 @@ export default function HomeScreen() {
 
               {/* Password Input 2 */}
               <View style={styles.formField}>
-                <ThemedText style={styles.formLabel}>
-                  {t("confirmBackupPassword")} *
-                </ThemedText>
+                <ThemedText style={styles.formLabel}>{t("confirmBackupPassword")} *</ThemedText>
                 <TextInput
                   style={dynamicStyles.modalInput}
                   placeholder={t("confirmBackupPassword")}
@@ -1970,8 +2098,23 @@ export default function HomeScreen() {
               )}
 
               {exportSuccessMsg && (
-                <View style={[styles.errorBox, { backgroundColor: "rgba(16, 185, 129, 0.12)", borderColor: "rgba(16, 185, 129, 0.3)" }]}>
-                  <ThemedText style={{ color: "#10b981", fontSize: 13, textAlign: "center", fontWeight: "700" }}>
+                <View
+                  style={[
+                    styles.errorBox,
+                    {
+                      backgroundColor: "rgba(16, 185, 129, 0.12)",
+                      borderColor: "rgba(16, 185, 129, 0.3)",
+                    },
+                  ]}
+                >
+                  <ThemedText
+                    style={{
+                      color: "#10b981",
+                      fontSize: 13,
+                      textAlign: "center",
+                      fontWeight: "700",
+                    }}
+                  >
                     ✓ {exportSuccessMsg}
                   </ThemedText>
                 </View>
@@ -1979,10 +2122,7 @@ export default function HomeScreen() {
 
               <View style={styles.modalActionRow}>
                 <Pressable
-                  style={({ pressed }) => [
-                    styles.cancelBtn,
-                    pressed && { opacity: 0.7 },
-                  ]}
+                  style={({ pressed }) => [styles.cancelBtn, pressed && { opacity: 0.7 }]}
                   onPress={() => setShowExportModal(false)}
                 >
                   <ThemedText style={{ color: theme.textSecondary, fontWeight: "600" }}>
@@ -2030,7 +2170,7 @@ export default function HomeScreen() {
                 </View>
                 <Pressable
                   onPress={() => setShowProModal(false)}
-                  style={{ padding: Spacing.one, cursor: "pointer" } as any}
+                  style={{ padding: Spacing.one, cursor: "pointer" } as WebCompatibleStyle}
                 >
                   <ThemedText style={{ fontSize: 18, color: theme.textSecondary }}>✕</ThemedText>
                 </Pressable>
@@ -2051,7 +2191,9 @@ export default function HomeScreen() {
                     },
                   ]}
                 >
-                  <ThemedText style={{ fontSize: 14, fontWeight: "700" }}>{t("freeTier")}</ThemedText>
+                  <ThemedText style={{ fontSize: 14, fontWeight: "700" }}>
+                    {t("freeTier")}
+                  </ThemedText>
                   <ThemedText style={{ fontSize: 12, color: theme.textSecondary, marginTop: 2 }}>
                     {t("freeTierDesc")}
                   </ThemedText>
@@ -2064,25 +2206,44 @@ export default function HomeScreen() {
                   style={[
                     styles.tierCard,
                     {
-                      backgroundColor: isDark ? "rgba(245, 158, 11, 0.08)" : "rgba(245, 158, 11, 0.05)",
+                      backgroundColor: isDark
+                        ? "rgba(245, 158, 11, 0.08)"
+                        : "rgba(245, 158, 11, 0.05)",
                       borderColor: "#f59e0b",
                     },
                   ]}
                 >
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
                     <ThemedText style={{ fontSize: 14, fontWeight: "800", color: "#f59e0b" }}>
                       👑 {t("proTier")}
                     </ThemedText>
                     {isProUser && (
-                      <View style={{ backgroundColor: "#10b981", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
-                        <ThemedText style={{ fontSize: 10, color: "#ffffff", fontWeight: "700" }}>已激活</ThemedText>
+                      <View
+                        style={{
+                          backgroundColor: "#10b981",
+                          paddingHorizontal: 6,
+                          paddingVertical: 2,
+                          borderRadius: 4,
+                        }}
+                      >
+                        <ThemedText style={{ fontSize: 10, color: "#ffffff", fontWeight: "700" }}>
+                          已激活
+                        </ThemedText>
                       </View>
                     )}
                   </View>
                   <ThemedText style={{ fontSize: 12, color: theme.text, marginTop: 2 }}>
                     {t("proTierDesc")}
                   </ThemedText>
-                  <ThemedText style={{ fontSize: 11, color: "#10b981", marginTop: 4, fontWeight: "600" }}>
+                  <ThemedText
+                    style={{ fontSize: 11, color: "#10b981", marginTop: 4, fontWeight: "600" }}
+                  >
                     ✓ 解锁无限账号 + .sav 离线加密备份导出
                   </ThemedText>
                 </View>
@@ -2156,8 +2317,23 @@ export default function HomeScreen() {
                   </View>
                 </View>
               ) : (
-                <View style={[styles.errorBox, { backgroundColor: "rgba(16, 185, 129, 0.12)", borderColor: "rgba(16, 185, 129, 0.3)" }]}>
-                  <ThemedText style={{ color: "#10b981", fontSize: 13, textAlign: "center", fontWeight: "700" }}>
+                <View
+                  style={[
+                    styles.errorBox,
+                    {
+                      backgroundColor: "rgba(16, 185, 129, 0.12)",
+                      borderColor: "rgba(16, 185, 129, 0.3)",
+                    },
+                  ]}
+                >
+                  <ThemedText
+                    style={{
+                      color: "#10b981",
+                      fontSize: 13,
+                      textAlign: "center",
+                      fontWeight: "700",
+                    }}
+                  >
                     🎉 您的账户已拥有 PRO 商业版永久授权，享受无限 2FA 密钥管理与全部高级特权！
                   </ThemedText>
                 </View>
@@ -2184,7 +2360,7 @@ export default function HomeScreen() {
                 </View>
                 <Pressable
                   onPress={() => setShowAddModal(false)}
-                  style={{ padding: Spacing.one, cursor: "pointer" } as any}
+                  style={{ padding: Spacing.one, cursor: "pointer" } as WebCompatibleStyle}
                 >
                   <ThemedText style={{ fontSize: 18, color: theme.textSecondary }}>✕</ThemedText>
                 </Pressable>
@@ -2196,9 +2372,7 @@ export default function HomeScreen() {
 
               {/* 1. 2FA Secret Key / URI Input */}
               <View style={styles.formField}>
-                <ThemedText style={styles.formLabel}>
-                  {t("secretOrUri")} *
-                </ThemedText>
+                <ThemedText style={styles.formLabel}>{t("secretOrUri")} *</ThemedText>
                 <TextInput
                   style={dynamicStyles.modalInput}
                   placeholder={t("secretOrUriPlaceholder")}
@@ -2216,9 +2390,7 @@ export default function HomeScreen() {
 
               {/* 2. Account Name (Optional) */}
               <View style={styles.formField}>
-                <ThemedText style={styles.formLabel}>
-                  {t("accountName")}
-                </ThemedText>
+                <ThemedText style={styles.formLabel}>{t("accountName")}</ThemedText>
                 <TextInput
                   style={dynamicStyles.modalInput}
                   placeholder={t("accountNamePlaceholder")}
@@ -2238,10 +2410,7 @@ export default function HomeScreen() {
 
               <View style={styles.modalActionRow}>
                 <Pressable
-                  style={({ pressed }) => [
-                    styles.cancelBtn,
-                    pressed && { opacity: 0.7 },
-                  ]}
+                  style={({ pressed }) => [styles.cancelBtn, pressed && { opacity: 0.7 }]}
                   onPress={() => setShowAddModal(false)}
                 >
                   <ThemedText style={{ color: theme.textSecondary, fontWeight: "600" }}>
@@ -2403,7 +2572,7 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
     borderRadius: 4,
     cursor: "pointer",
-  } as any,
+  } as WebCompatibleStyle,
   statusDot: {
     width: 6,
     height: 6,
@@ -2499,7 +2668,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     cursor: "pointer",
     flexShrink: 0,
-  } as any,
+  } as WebCompatibleStyle,
   digitsBoxWrapper: {
     paddingVertical: 12,
     paddingHorizontal: 12,
@@ -2508,7 +2677,7 @@ const styles = StyleSheet.create({
     cursor: "pointer",
     alignItems: "center",
     justifyContent: "center",
-  } as any,
+  } as WebCompatibleStyle,
   digitsSegmentRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -2530,7 +2699,10 @@ const styles = StyleSheet.create({
   },
   totpDigits: {
     fontWeight: "800",
-    fontFamily: Platform.select({ web: "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace", default: "Courier" }),
+    fontFamily: Platform.select({
+      web: "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace",
+      default: "Courier",
+    }),
   },
   cardControlsRow: {
     flexDirection: "row",
@@ -2579,7 +2751,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.15,
     shadowRadius: 3,
-  } as any,
+  } as WebCompatibleStyle,
   copyButtonText: {
     color: "#ffffff",
     fontSize: 12,
@@ -2643,7 +2815,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     cursor: "pointer",
-  } as any,
+  } as WebCompatibleStyle,
   modalHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -2669,7 +2841,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     cursor: "pointer",
-  } as any,
+  } as WebCompatibleStyle,
   submitBtn: {
     backgroundColor: "#2563eb",
     paddingHorizontal: Spacing.four,
@@ -2682,5 +2854,5 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 6,
-  } as any,
+  } as WebCompatibleStyle,
 });

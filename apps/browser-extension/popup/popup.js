@@ -9986,6 +9986,31 @@ function base32ToUint8Array(base32Str) {
   }
   return new Uint8Array(output);
 }
+var MIN_OTP_DIGITS = 6;
+var MAX_OTP_DIGITS = 8;
+var MIN_OTP_PERIOD_SECONDS = 10;
+var MAX_OTP_PERIOD_SECONDS = 300;
+function validateOtpDigits(digits) {
+  if (!Number.isInteger(digits) || digits < MIN_OTP_DIGITS || digits > MAX_OTP_DIGITS) {
+    throw new Error("OTP 位数必须是 6 到 8 之间的整数");
+  }
+  return digits;
+}
+function validateOtpPeriod(period) {
+  if (!Number.isInteger(period) || period < MIN_OTP_PERIOD_SECONDS || period > MAX_OTP_PERIOD_SECONDS) {
+    throw new Error("TOTP 周期必须是 10 到 300 秒之间的整数");
+  }
+  return period;
+}
+function validateHotpCounter(counter) {
+  if (!Number.isSafeInteger(counter) || counter < 0) {
+    throw new Error("HOTP 计数器必须是非负安全整数");
+  }
+  return counter;
+}
+function toArrayBuffer(bytes) {
+  return new Uint8Array(bytes).buffer;
+}
 function parseOtpAuthUri(uri) {
   let cleanUri = uri.trim();
   if (cleanUri.includes("?uri=")) {
@@ -10049,33 +10074,33 @@ function parseOtpAuthUri(uri) {
     algorithm = "SHA-256";
   if (rawAlgo === "SHA512" || rawAlgo === "SHA-512")
     algorithm = "SHA-512";
-  const digits = parseInt(searchParams.get("digits") || "6", 10);
-  const period = parseInt(searchParams.get("period") || "30", 10);
+  const digits = validateOtpDigits(Number.parseInt(searchParams.get("digits") || "6", 10));
+  const period = validateOtpPeriod(Number.parseInt(searchParams.get("period") || "30", 10));
   const counterStr = searchParams.get("counter");
-  const counter = counterStr ? parseInt(counterStr, 10) : undefined;
+  const counter = counterStr ? validateHotpCounter(Number.parseInt(counterStr, 10)) : undefined;
   return {
     type,
     issuer: finalIssuer,
     account: finalAccount,
     secret: secret.replace(/[\s\-_=]/g, "").toUpperCase(),
     algorithm,
-    digits: isNaN(digits) ? 6 : digits,
-    period: isNaN(period) ? 30 : period,
+    digits,
+    period,
     counter,
     rawUri: cleanUri
   };
 }
 async function generateTOTP(secretBase32, options) {
   const algorithm = options?.algorithm || "SHA-1";
-  const digits = options?.digits || 6;
-  const period = options?.period || 30;
+  const digits = validateOtpDigits(options?.digits || 6);
+  const period = validateOtpPeriod(options?.period || 30);
   const now = options?.timestamp || Date.now();
   const epochSeconds = Math.floor(now / 1000);
   const timeStep = Math.floor(epochSeconds / period);
   const remainingSeconds = period - epochSeconds % period;
   const progress = remainingSeconds / period;
   const keyBytes = base32ToUint8Array(secretBase32);
-  const cryptoKey = await crypto.subtle.importKey("raw", keyBytes, { name: "HMAC", hash: { name: algorithm } }, false, ["sign"]);
+  const cryptoKey = await crypto.subtle.importKey("raw", toArrayBuffer(keyBytes), { name: "HMAC", hash: { name: algorithm } }, false, ["sign"]);
   const timeBuffer = new ArrayBuffer(8);
   const dataView = new DataView(timeBuffer);
   dataView.setBigUint64(0, BigInt(timeStep), false);
@@ -10083,32 +10108,39 @@ async function generateTOTP(secretBase32, options) {
   const hmacBytes = new Uint8Array(hmacSignature);
   const offset = hmacBytes[hmacBytes.length - 1] & 15;
   const binary = (hmacBytes[offset] & 127) << 24 | (hmacBytes[offset + 1] & 255) << 16 | (hmacBytes[offset + 2] & 255) << 8 | hmacBytes[offset + 3] & 255;
-  const otp = binary % Math.pow(10, digits);
+  const otp = binary % 10 ** digits;
   const code = String(otp).padStart(digits, "0");
   return { code, remainingSeconds, progress };
 }
 
 // apps/browser-extension/src/popup.ts
+function requireElement(id) {
+  const element = document.getElementById(id);
+  if (!element) {
+    throw new Error(`缺少必要界面元素: ${id}`);
+  }
+  return element;
+}
 var entries = [];
 var pending2faData = null;
 var timerId = null;
-var viewSetup = document.getElementById("view-setup");
-var viewUnlock = document.getElementById("view-unlock");
-var viewMain = document.getElementById("view-main");
-var headerActions = document.getElementById("header-actions");
-var pendingBanner = document.getElementById("pending-banner");
-var pendingBannerText = document.getElementById("pending-banner-text");
-var entriesList = document.getElementById("entries-list");
-var emptyState = document.getElementById("empty-state");
-var searchInput = document.getElementById("search-input");
-var modalAdd = document.getElementById("modal-add-entry");
-var addIssuer = document.getElementById("add-issuer");
-var addAccount = document.getElementById("add-account");
-var addSecret = document.getElementById("add-secret");
-var addError = document.getElementById("add-error");
+var viewSetup = requireElement("view-setup");
+var viewUnlock = requireElement("view-unlock");
+var viewMain = requireElement("view-main");
+var headerActions = requireElement("header-actions");
+var pendingBanner = requireElement("pending-banner");
+var pendingBannerText = requireElement("pending-banner-text");
+var entriesList = requireElement("entries-list");
+var emptyState = requireElement("empty-state");
+var searchInput = requireElement("search-input");
+var modalAdd = requireElement("modal-add-entry");
+var addIssuer = requireElement("add-issuer");
+var addAccount = requireElement("add-account");
+var addSecret = requireElement("add-secret");
+var addError = requireElement("add-error");
 async function init() {
   chrome.runtime.sendMessage({ type: "GET_VAULT_STATUS" }, async (res) => {
-    if (!res || !res.success) {
+    if (!res?.success) {
       showView("setup");
       return;
     }
@@ -10136,9 +10168,10 @@ function showView(view) {
 }
 async function checkPending2Fa() {
   chrome.runtime.sendMessage({ type: "GET_PENDING_2FA" }, (res) => {
-    if (res && res.success && res.pending2fa) {
-      pending2faData = res.pending2fa;
-      pendingBannerText.innerText = `检测到来自「${pending2faData.issuer}」的 2FA 密钥`;
+    if (res?.success && res.pending2fa) {
+      const pending = res.pending2fa;
+      pending2faData = pending;
+      pendingBannerText.innerText = `检测到来自「${pending.issuer}」的 2FA 密钥`;
       pendingBanner.style.display = "flex";
     } else {
       pendingBanner.style.display = "none";
@@ -10147,7 +10180,7 @@ async function checkPending2Fa() {
 }
 async function loadEntries() {
   chrome.runtime.sendMessage({ type: "GET_ENTRIES" }, (res) => {
-    if (res && res.success) {
+    if (res?.success) {
       entries = res.entries || [];
       renderEntries();
       startTicker();
@@ -10240,10 +10273,17 @@ async function updateTotpCodes() {
 }
 function copyToClipboard(text) {
   navigator.clipboard.writeText(text);
+  setTimeout(async () => {
+    try {
+      if (await navigator.clipboard.readText() === text) {
+        await navigator.clipboard.writeText("");
+      }
+    } catch {}
+  }, 30000);
   showToast("✅ 已复制动态验证码！");
 }
 function showToast(msg) {
-  const toast = document.getElementById("toast");
+  const toast = requireElement("toast");
   toast.innerText = msg;
   toast.style.display = "block";
   setTimeout(() => {
@@ -10252,7 +10292,7 @@ function showToast(msg) {
 }
 function deleteEntry(id) {
   chrome.runtime.sendMessage({ type: "DELETE_ENTRY", id }, (res) => {
-    if (res && res.success) {
+    if (res?.success) {
       showToast("\uD83D\uDDD1️ 已删除该 2FA 账号");
       loadEntries();
     }
@@ -10262,9 +10302,11 @@ function escapeHtml(str) {
   return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 document.getElementById("btn-do-setup")?.addEventListener("click", () => {
-  const p1 = document.getElementById("setup-pwd").value;
-  const p2 = document.getElementById("setup-pwd-confirm").value;
-  const errEl = document.getElementById("setup-error");
+  const setupPwd = requireElement("setup-pwd");
+  const setupPwdConfirm = requireElement("setup-pwd-confirm");
+  const p1 = setupPwd.value;
+  const p2 = setupPwdConfirm.value;
+  const errEl = requireElement("setup-error");
   if (!p1 || p1.length < 6) {
     errEl.style.display = "block";
     errEl.innerText = "主密码长度至少为 6 位";
@@ -10277,7 +10319,9 @@ document.getElementById("btn-do-setup")?.addEventListener("click", () => {
   }
   errEl.style.display = "none";
   chrome.runtime.sendMessage({ type: "SETUP_VAULT", password: p1 }, (res) => {
-    if (res && res.success) {
+    setupPwd.value = "";
+    setupPwdConfirm.value = "";
+    if (res?.success) {
       showToast("\uD83C\uDF89 保险库初始化成功！");
       showView("main");
       loadEntries();
@@ -10293,8 +10337,9 @@ document.getElementById("unlock-pwd")?.addEventListener("keydown", (e) => {
     doUnlock();
 });
 function doUnlock() {
-  const pwd = document.getElementById("unlock-pwd").value;
-  const errEl = document.getElementById("unlock-error");
+  const unlockPwd = requireElement("unlock-pwd");
+  const pwd = unlockPwd.value;
+  const errEl = requireElement("unlock-error");
   if (!pwd) {
     errEl.style.display = "block";
     errEl.innerText = "请输入主密码";
@@ -10302,7 +10347,8 @@ function doUnlock() {
   }
   errEl.style.display = "none";
   chrome.runtime.sendMessage({ type: "UNLOCK_VAULT", password: pwd }, (res) => {
-    if (res && res.success) {
+    unlockPwd.value = "";
+    if (res?.success) {
       showView("main");
       loadEntries();
       checkPending2Fa();
@@ -10315,7 +10361,7 @@ function doUnlock() {
 document.getElementById("btn-lock")?.addEventListener("click", () => {
   chrome.runtime.sendMessage({ type: "LOCK_VAULT" }, () => {
     showView("unlock");
-    document.getElementById("unlock-pwd").value = "";
+    requireElement("unlock-pwd").value = "";
     showToast("\uD83D\uDD12 已安全锁定保险库");
   });
 });
@@ -10331,8 +10377,8 @@ document.getElementById("btn-import-pending")?.addEventListener("click", () => {
 });
 document.getElementById("btn-scan-current-page")?.addEventListener("click", () => {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (tabs && tabs[0]?.id) {
-      chrome.tabs.sendMessage(tabs[0].id, { type: "TRIGGER_MANUAL_SCAN" }, (res) => {
+    if (tabs[0]?.id) {
+      chrome.tabs.sendMessage(tabs[0].id, { type: "TRIGGER_MANUAL_SCAN" }, () => {
         if (chrome.runtime.lastError) {
           showToast("⚠️ 当前页面禁止脚本运行 (如浏览器内部设置页)");
         } else {
@@ -10353,7 +10399,8 @@ document.getElementById("btn-upload-qr")?.addEventListener("click", () => {
   }
 });
 inputQrFile?.addEventListener("change", async (e) => {
-  const file = e.target.files?.[0];
+  const target = e.target;
+  const file = target?.files?.[0];
   if (!file)
     return;
   const reader = new FileReader;
@@ -10369,7 +10416,7 @@ inputQrFile?.addEventListener("change", async (e) => {
       ctx.drawImage(img, 0, 0);
       const imgData = ctx.getImageData(0, 0, img.width, img.height);
       const qr = import_jsqr.default(imgData.data, img.width, img.height);
-      if (qr && qr.data) {
+      if (qr?.data) {
         let uri = qr.data.trim();
         if (uri.startsWith("otpauth%3A%2F%2F") || uri.startsWith("otpauth%3a%2f%2f")) {
           uri = decodeURIComponent(uri);
@@ -10388,7 +10435,9 @@ inputQrFile?.addEventListener("change", async (e) => {
         showToast("⚠️ 未在该图片中检测到有效二维码");
       }
     };
-    img.src = event.target?.result;
+    if (typeof event.target?.result === "string") {
+      img.src = event.target.result;
+    }
   };
   reader.readAsDataURL(file);
 });
@@ -10431,7 +10480,7 @@ document.getElementById("btn-save-add")?.addEventListener("click", () => {
       finalDigits = parsed.digits;
       finalPeriod = parsed.period;
     } catch (e) {
-      showAddError(e.message || "无效的 otpauth 链接");
+      showAddError(e instanceof Error ? e.message : "无效的 otpauth 链接");
       return;
     }
   } else {
@@ -10452,7 +10501,7 @@ document.getElementById("btn-save-add")?.addEventListener("click", () => {
     period: finalPeriod
   };
   chrome.runtime.sendMessage({ type: "SAVE_ENTRY", payload }, (res) => {
-    if (res && res.success) {
+    if (res?.success) {
       modalAdd.style.display = "none";
       showToast("✨ 2FA 账号已安全保存！");
       loadEntries();
@@ -10464,7 +10513,7 @@ document.getElementById("btn-save-add")?.addEventListener("click", () => {
 });
 function showAddError(text) {
   addError.style.display = "block";
-  addError.innerText = "⚠️ " + text;
+  addError.innerText = `⚠️ ${text}`;
 }
 searchInput.addEventListener("input", () => {
   renderEntries();

@@ -8,7 +8,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-blue?logo=typescript)](https://www.typescriptlang.org/)
 [![Bun](https://img.shields.io/badge/Runtime-Bun-f472b6?logo=bun)](https://bun.sh/)
 [![Expo](https://img.shields.io/badge/Platform-Expo%20%2F%20React%20Native-black?logo=expo)](https://expo.dev/)
-[![Electron](https://img.shields.io/badge/Desktop-Electron%2032-47848F?logo=electron)](https://www.electronjs.org/)
+[![Electron](https://img.shields.io/badge/Desktop-Electron%2039-47848F?logo=electron)](https://www.electronjs.org/)
 [![Cryptography](https://img.shields.io/badge/Security-AES--256--GCM%20%2B%20Argon2id-success)](packages/core)
 [![Tests](https://img.shields.io/badge/Tests-19%2F19%20Passing-brightgreen)](tests/)
 
@@ -104,6 +104,19 @@ bun run build:exe
 apps/desktop/release/Xiaorui 2FA Security Vault 1.0.0.exe
 ```
 无需安装任何环境，双击即可在任何 Windows 电脑上直接运行！
+
+如需同时生成 NSIS 安装包和便携版，请执行：
+
+```bash
+bun run --cwd apps/desktop build:exe
+```
+
+生成位置：
+
+```text
+apps/desktop/release/Xiaorui 2FA Security Vault Setup 1.0.0.exe
+apps/desktop/release/Xiaorui 2FA Security Vault 1.0.0.exe
+```
 
 ---
 
