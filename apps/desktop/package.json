@@ -5,7 +5,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "prebuild": "bun --cwd ../expo expo export --platform web",
+    "prebuild": "bun --cwd ../expo expo export --platform web && bun --eval \"require('node:fs').cpSync('../expo/dist', 'dist', { recursive: true })\"",
     "build": "electron-builder build --win --dir",
     "build:exe": "electron-builder build --win nsis portable",
     "build:msix": "electron-builder build --win appx"
@@ -16,13 +16,7 @@
     "directories": {
       "output": "release"
     },
-    "files": ["main.js", "package.json", "../expo/dist/**/*"],
-    "extraResources": [
-      {
-        "from": "../expo/dist",
-        "to": "dist"
-      }
-    ],
+    "files": ["main.js", "package.json", "dist/**/*"],
     "win": {
       "target": ["nsis", "portable", "appx"]
     },
