@@ -120,6 +120,34 @@ apps/desktop/release/Xiaorui 2FA Security Vault 1.0.0.exe
 
 ---
 
+## 🛡️ Themida 最高加密系数保护与 Windows 安装包构建
+
+项目已集成 **Themida 3.2.6.0 企业级加壳保护**（多架构虚拟机 Multi-VM、反内核/用户态调试、内存反转储、防字节篡改、OEP入口混淆）与 **Inno Setup 6 现代化安装程序打包流水线**。
+
+详尽的防护选项与参数指引请参阅技术手册：[《Themida 最高加密系数保护与终端打包操作指南》(docs/THEMIDA_PROTECTION_GUIDE.md)](docs/THEMIDA_PROTECTION_GUIDE.md)。
+
+### 1. 终端一键打包命令
+```powershell
+# 标准完整流程（单元安全测试 -> Themida 最高系数加壳 -> Inno Setup 编译）
+bun run package:protected-installer
+# 或者在 PowerShell 中直接执行
+pwsh -File ./scripts/Package-ProtectedInstaller.ps1
+
+# 仅打包 Inno Setup 固实安装包（跳过 Themida 加壳）
+bun run package:installer
+```
+
+### 2. 输出产物
+打包完成后，最终产物存放于 `artifacts/` 目录：
+- **安装包向导**：`artifacts/Xiaorui-2FA-Vault-1.0.0-win-x64-Setup.exe`
+- **完整性防伪散列**：`artifacts/Xiaorui-2FA-Vault-1.0.0-win-x64-Setup.exe.sha256`
+
+### 3. 本地私密路径防泄漏规范
+- 本地加密工具路径与工程文件由 `build.secrets.local.json` 管理，已被 `.gitignore` 彻底阻断，绝不会向 GitHub 泄露真实物理路径。
+- 开源协作人员可参考 `build.secrets.example.json` 模板按需配置。
+
+---
+
 ## 💎 Free 免费版 vs PRO 专业版权益对比
 
 | 功能特性 | 免费版 (Free) | PRO 专业会员 (PRO) |

@@ -2,6 +2,18 @@
 
 所有关于 **Xiaorui 2FA Security Vault** 的重要版本更新与功能迭代记录均在此列出。
 
+## [1.2.0-themida] - 2026-09-17
+
+### 🛡️ 企业级加壳与高安全打包 (Enterprise Protection & Packaging)
+- 新增 **Themida 3.2.6.0 最高加密防护体系**：支持多 CPU 虚拟机架构（Multi-VM: TIGER-RED / FISH-BLACK / PUMA-WHITE）、内核反调试、内存防 Dump、运行时内存自检、入口点深度混淆（OEP）。
+- 新增 **Inno Setup 6 现代化单文件安装包打包脚本 (`scripts/installer.iss`)**：采用 `lzma2/ultra64` 固实极限压缩、原生 64 位支持、自适应高分屏 UI、桌面与开始菜单快捷方式、完整干净卸载。
+- 新增 **端到端一键打包流水线脚本 (`scripts/Package-ProtectedInstaller.ps1`)**：整合安全测试、运行时依赖提取、Themida 静默加壳、动态虚拟盘规避 Windows MAX_PATH 限制、Inno Setup 编译与 SHA-256 防伪审计。
+- 新增本地私密配置隔离机制 (`build.secrets.local.json` 与 `build.secrets.example.json`)，严格将私密路径与加密工程排除于 Git 上传之外，实现零敏感信息泄漏。
+
+### 📚 文档完善 (Documentation)
+- 新增详细技术手册 `docs/THEMIDA_PROTECTION_GUIDE.md`（《Themida 最高加密系数保护与终端自动化打包指南》）。
+- 同步完善 `README.md` 与 `README_ZH.md`，添加 Themida 高安全打包章节与命令说明。
+
 ---
 
 ## [1.1.1-security] - 2026-09-05

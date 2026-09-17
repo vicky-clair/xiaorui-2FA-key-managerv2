@@ -120,6 +120,34 @@ apps/desktop/release/Xiaorui 2FA Security Vault 1.0.0.exe
 
 ---
 
+## 🛡️ Enterprise Themida Protection & Windows Setup Pipeline
+
+The project includes an enterprise-grade protection pipeline combining **Themida 3.2.6.0** (Multi-CPU Virtual Machines, Kernel/User-Mode Anti-Debugging, Memory Anti-Dumping, Real-time Integrity Verification, OEP Obfuscation) and an **Inno Setup 6** installer compiler.
+
+For comprehensive configuration steps and maximum protection coefficient options, refer to: [《Themida High-Security Protection Guide》(docs/THEMIDA_PROTECTION_GUIDE.md)](docs/THEMIDA_PROTECTION_GUIDE.md).
+
+### 1. Terminal One-Click Packaging
+```powershell
+# Standard full pipeline (Security tests -> Themida max protection -> Inno Setup build)
+bun run package:protected-installer
+# Or run directly via PowerShell
+pwsh -File ./scripts/Package-ProtectedInstaller.ps1
+
+# Packaging Inno Setup solid installer only (skipping Themida)
+bun run package:installer
+```
+
+### 2. Output Artifacts
+Generated files are placed in `artifacts/`:
+- **Setup Installer**: `artifacts/Xiaorui-2FA-Vault-1.0.0-win-x64-Setup.exe`
+- **SHA-256 Checksum**: `artifacts/Xiaorui-2FA-Vault-1.0.0-win-x64-Setup.exe.sha256`
+
+### 3. Confidential Secrets & Zero-Leak Policy
+- Local installation paths and `.tmd` files are stored in `build.secrets.local.json`, which is excluded by `.gitignore` to prevent any credential leakage to GitHub.
+- Open-source contributors can reference `build.secrets.example.json`.
+
+---
+
 ## 💎 Free vs PRO Feature Matrix
 
 | Feature | Free Tier | PRO Membership |

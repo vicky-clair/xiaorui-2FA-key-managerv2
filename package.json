@@ -15,6 +15,8 @@
     "build:msix": "bun --cwd apps/expo expo export --platform web && bun --cwd apps/desktop electron-builder --win appx",
     "build:extension": "bun run scripts/generate-icons.ts && bun run scripts/build-extension.ts",
     "package:extension-zip": "bun run build:extension && bun run scripts/package-extension-zip.ts",
+    "package:installer": "powershell -ExecutionPolicy Bypass -File ./scripts/Package-ProtectedInstaller.ps1 -SkipThemida",
+    "package:protected-installer": "powershell -ExecutionPolicy Bypass -File ./scripts/Package-ProtectedInstaller.ps1",
     "test": "bun test",
     "lint": "biome check .",
     "format": "biome format --write ."

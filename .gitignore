@@ -66,6 +66,11 @@ expo-env.d.ts
 .env
 .env*.local
 *.pem
+build.secrets.local.json
+*.secrets.local.json
+*.tmd
+artifacts/
+*.sha256
 
 # ==========================================
 # Logs & Debugging
